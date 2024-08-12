@@ -11,6 +11,8 @@ import pandas as pd
 import win32com.client
 import logging
 import psutil
+from zipfile import ZipFile
+import glob
 
 logger = logging.getLogger(__name__)
 
@@ -496,7 +498,8 @@ class generalDMClass:
         :param tableName: Name of table to be created
         :param inDBPath: Full path to backend database
 
-        :return:        """
+        :return:
+        """
 
         cnxn = generalDMClass.connect_DB_Access(inDBPath)
 
@@ -539,6 +542,67 @@ class generalDMClass:
         cnxn.close()
 
         print(f'Created Temp Table - {tableName}')
+
+    def unZipZip(zipPath, outName, outDir):
+        """
+        Unzip passed zipfile to the output directory
+
+        :param zipPath: Full path to zip file
+        :param outName: Name of the output directory
+        :param outDir: output Directory for unzipped files
+
+        :return:
+        """
+
+        unZipPath = f'{outDir}\\{outName}'
+        if os.path.exists(outZipPath):
+            pass
+        else:
+            os.makedirs(outZipPath)
+
+        # Unzip and export to the workspace
+        with ZipFile(zipPath, 'r') as zip:
+            print('Unzipping files')
+            zip.extractall(path=outDir)
+
+
+    def importFilesToDF(inDir):
+        """
+        Import files in passed folder to dataframe(s). Uses GLOB to get all files in the directory.
+        Currently defined to import .csv, and .xlsx files
+
+        :param inDir: Directory with files to be imported to dataframes
+
+        :return:outDFDic: List of imported dataframes
+        """
+        #Dictionary for the output dataframes per file imported
+        outDFDic = {}
+
+        filePattern = f'{inDir}/*'
+        fileList = glob.glob(filePattern)
+
+        for file in fileList:
+            file_name = file.split('/')[-1].split('.')[0]
+            fileType = os.path.basename(file)
+
+            if fileType == ".csv":
+                df = pd.read_csv(file)
+            elif fileType == ".xlsx":
+                df = pd.read_excel(file)
+            else:
+                logMsg = f"WARNING fileType - {fileType} - is not defined - Exiting method 'importFileToDF."
+                print (logMsg)
+                logging.info(logMsg, exc_info=True)
+                exit()
+
+            #Add the dataframe with the filename as the key to the outDFDic
+            outDFDic[file_name] = df
+            logMsg = f"Successfully imported - {file_name} - to dataframe."
+            print(logMsg)
+            logging.info(logMsg, exc_info=True)
+
+        return outDFDic
+
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
