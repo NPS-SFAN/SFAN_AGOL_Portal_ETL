@@ -6,6 +6,8 @@ Methods for working within AGOL/Portal and the ArcGIS API.
 import os, sys, traceback
 import generalDM as dm
 import logging
+import arcgis
+from arcgis.gis import GIS
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class generalArcGIS:
                  
          
         :return: generalArcGIS instance with passed variable definitions and defined methods
-        """`
+        """
 
         self.agolEnv = agolEnv
         self.layerID = layerID
@@ -45,19 +47,45 @@ class generalArcGIS:
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance
 
-        :return: outDFListList - List of dataframes imported
+        :return: outDFDic - Dictionary with all imported dataframes from the imported feature layer
         """
 
-        #Connect to the Cloud via pass credentialling workflow
-        if generalArcGIS.credentials.lower() = 'oauth':
-            outGIS = generalArcGIS.connectAGOL_clientID(generalArcGIS)
-        else: #Connect via ArcGISPro Environment
-            outGIS = generalArcGIS.connectAGOL_ArcGIS(generalArcGIS)
+        try:
 
-        #Import the feature layer
-        outDFListList = generalArcGIS.importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            #STOPPED HERE 8/12/2024 - connectAGOL_clientID not working is seeing an extra argument.
+            # Connect to the Cloud via pass credentials workflow
+            if generalArcGIS.credentials.lower() == 'oauth':
+                cloudPath_LU = str(generalArcGIS.cloudPath)
+                pythonApp_LU = str(generalArcGIS.pythonApp_ID)
+                outGIS = connectAGOL_clientID(generalArcGIS.cloudPath, generalArcGIS.pythonApp_ID,
+                                                            dmInstance)
 
-    def importFeatureLayer(generalArcGIS, etlInstance, dmInstance):
+            else: #Connect via ArcGISPro Environment
+                outGIS = generalArcGIS.connectAGOL_ArcGIS(cloudPath_LU, pythonApp_LU)
+
+            #Import the feature layer
+            outFeatureLayer = generalArcGIS.importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            outzipPath = outFeatureLayer[0]
+            outName = outFeatureLayer[1]
+
+            # Extract Exported zip file and import .csv files to DBF files
+            dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
+
+            fullPathZipped = f"{outzipPath}\\{outName}"
+            # Import Extracted Files to Dataframes
+            outDFDic = dm.generalDMClass.importFilesToDF(inDir=fullPathZipped)
+
+            return outDFDic
+
+        except Exception as e:
+
+            logMsg = f'ERROR - processFeatureLayer - {etlInstance.agolEnv} - {etlInstance.layerID}: {e}'
+            print (logMsg)
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+    def importFeatureLayer(outGIS, generalArcGIS, etlInstance):
         """
         Workflow for processing of the passed AGOL/Portal ID
 
@@ -66,34 +94,54 @@ class generalArcGIS:
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance
 
-        :return: outDFListList - List of dataframes imported
+        :return: outZipFull: full path to zip file of imported layer for AGOL/Portal
+        dataTitle: tile of the feature layer that was imported
         """
 
-        #Connect to the Cloud via pass credentialling workflow
-        if generalArcGIS.credentials.lower() = 'oauth':
-            outGIS = generalArcGIS.connectAGOL_clientID(generalArcGIS)
-        else: #Connect via ArcGISPro Environment
-            outGIS = generalArcGIS.connectAGOL_ArcGIS(generalArcGIS)
+        try:
+            layerIDLU = generalArcGIS.layerID
 
-        #Import the feature layer
-        outDFListList = generalArcGIS.importFeature(outGIS, etlInstance, dmInstance)
+            #Pull the desired AGOL content via the AGOL ID
+            item = outGIS.content.get(layerIDLU)
 
+            # Define DateTile for Feature Layer being exported
+            dataTitle = item.title
 
-    def connectAGOL_clientID(cloudPath, pythonApp_ID):
+            outZipFull = f'{etlInstance.outDir}\workspace\outLayer_{dataTitle}.zip'
+            result = item.export(dataTile, '.csv', wait=True)
+            outWorkDir = f'{etlInstance.outDir}\\workspace'
+            result.download(outWorkDir)
+
+            logMsg = f'Successfully Downloaded from - {etlInsance.agolEnv} - {dataTitle}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.log(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+            return outZipFull, dataTitle
+
+        except Exception as e:
+
+            logMsg = f'ERROR - Downloading from - {etlInsance.agolEnv} - {etlInstance.layerID}: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+    def connectAGOL_clientID(inPath, pythonApp_ID, dmInstance):
+
         """
         Connect to defined AGOL or Portal Path via a passed Python Application OAuth 2.0 Credential
 
-        :param cloudPath: Path to ESRI service being proceeded
+        :param cloudPath: Path to ESRI service being ETL processed
         :param pythonApp_ID: Python Application OAuth 2.0 credential
 
         :return: Return GIS Connection to AGOL or Portal for the current user
         """
 
         try:
-            gis = GIS(cloudPath, client_id=pythonApp_ID)
-            print (f"Successfully connected to - {cloudPath}")
+            gis = GIS(inPath, client_id=pythonApp_ID)
+            print(f"Successfully connected to - {cloudPath}")
 
-            return GIS
+            return gis
         except Exception as e:
 
             logMsg = f'ERROR - "Exiting Error connectAGOl_clientID - ArcGIS_API.py: {e}'
@@ -101,7 +149,7 @@ class generalArcGIS:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def connectAGOL_ArcGIS(cloudPath, pythonEnvGISPro):
+    def connectAGOL_ArcGIS(cloudPath, pythonEnvGISPro, dmInstance):
         """
         Connect to defined AGOL or Portal Path via the ArcGISPro Environment which will use the NPS AD credentials.
         This is an alternative to processing an Python Application ID in meethod 'connecdtAGOL_clientID'.
