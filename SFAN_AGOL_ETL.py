@@ -6,7 +6,7 @@ database and table schema locations.
 
 Output:
 
-Python Environment: SFAN_AGOLEETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
+Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
 pywin32
 
 Date Developed - August 2024
@@ -19,6 +19,7 @@ import sys
 import os
 import session_info
 import traceback
+import datetime
 from datetime import datetime
 import ETL as etl
 import generalDM as dm
@@ -43,7 +44,7 @@ inYear = 2023
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
 layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 # URL to the AGOL or Portal Path to be processed
-cloudPath = "https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
+cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
@@ -55,7 +56,7 @@ agolEnv = r'C:\Program Files\ArcGIS\Pro\bin\Python\envs\arcgispro-py3\python.exe
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
 inUser = 'ksherrill'
-
+from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
@@ -72,12 +73,19 @@ def main():
         #Close any open Access Databases on the computer
         dm.generalDMClass.closeAccessDB()
 
+        # Logfile will be saved in the workspace directory which is child of the fileDir - this is in addition to the
+        # logger file 'ScriptProcessingError.log being created by the 'logger' configuration file via python.
+        logFile = dm.generalDMClass.createLogFile(logFilePrefix=outName, workspaceParent=outDir)
+
+        # Create the data management instance to  be used to define the logfile path and other general DM attributes
+        dmInstance = dm.generalDMClass(logFile)
+
         ###############
         # Define the etlInstance and dmInstance instances
         ################
 
         # Create the etlInstance instance
-        etlInstance = etl.etlInstance(protocol=protocol, inDBBE=inDBBE, yearLU=inYear, inUser=inUser)
+        etlInstance = etl.etlInstance(protocol=protocol, inDBBE=inDBBE, flID=layerID, yearLU=inYear, inUser=inUser, outDir=outDir)
         # Print the name space of the instance
         print(etlInstance.__dict__)
 
@@ -87,21 +95,12 @@ def main():
         # Print the name space of the instance
         print(generalArcGIS.__dict__)
 
-        # Logfile will be saved in the workspace directory which is child of the fileDir - this is in addition to the
-        # logger file 'ScriptProcessingError.log being created by the 'logger' configuration file via python.
-        logFile = dm.generalDMClass.createLogFile(logFilePrefix=outName, workspaceParent=outDir)
-
-        # Create the data management instance to  be used to define the logfile path and other general DM attributes
-        dmInstance = dm.generalDMClass(logFile)
-
         ###############
         # Proceed to the Workflow to process the defined ETL Routines
         ################
 
         # Go to QC Processing Routines
-        etl.etlInstance.process_ETLRequest(etlInstance=etlInstance, dmInstance=dmInstance)
-
-
+        etl.etlInstance.process_ETLRequest(generalArcGIS=generalArcGIS, etlInstance=etlInstance, dmInstance=dmInstance)
 
         # Message Script Completed
         logMsg = f'Successfully Finished ETL Routine for - {protocol}'
@@ -137,6 +136,15 @@ if __name__ == '__main__':
         pass
     else:
         os.makedirs(outDir)
+
+    #################################
+    # Checking for working directories and Log File
+    ##################################
+    workspace = f"{outDir}\\workspace"
+    if os.path.exists(workspace):
+        pass
+    else:
+        os.makedirs(workspace)
 
     # Run Main Code Bloc
     main()
