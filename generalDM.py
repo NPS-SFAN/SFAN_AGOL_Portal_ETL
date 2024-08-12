@@ -23,9 +23,8 @@ class generalDMClass:
         Define the instantiated general Data Management instantiation attributes
 
         :param logFile: File path and name of .txt logFile
-        :return: zzzz
+        :return: Instantiated generalDMClass with passed variable definitions and defined methods
         """
-
         self.logFileName = logFile
 
     def createLogFile(logFilePrefix, workspaceParent):
