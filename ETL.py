@@ -15,7 +15,7 @@ class etlInstance:
     # Class Variables
     numETLInstances = 0
 
-    def __init__(self, protocol, inDBBE, flID, yearLU, inUser):
+    def __init__(self, protocol, inDBBE, flID, yearLU, inUser, outDir):
         """
         Define the instantiated etlInstance attributes
         
@@ -24,6 +24,7 @@ class etlInstance:
         :param yearLU: Year being processed
         :param flID: Feature Layer ID
         :param inUser: NPS UserNam
+        :paam outDir: Output directory
         
         :return: instantiated self object
         """
@@ -33,6 +34,7 @@ class etlInstance:
         self.flID = flID
         self.yearLU = yearLU
         self.inUser = inUser
+        self.outDir = outDir
 
         # Update the Class Variable
         etlInstance.numETLInstances += 1
@@ -55,15 +57,11 @@ class etlInstance:
             logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
             # Pull the Feature Layer for the defined  return as dataframe(s) in list variable outDFList
-            outDFList = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
-
-
-
-
+            outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
 
             # Create the protocol specific ETL instance
             if etlInstance.protocol == 'SNPLPORE':
-                etlProtocolInstance = SNPLP.etl_SNPLPORE()
+                etlProtocolInstance = SNPLP.etl_SNPLPORE(outDFDic)
             else:
                 logMsg = f"WARNING Protocol Specific Instance - {etlInstance.protocol} - has not been defined."
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
