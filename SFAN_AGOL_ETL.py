@@ -4,6 +4,10 @@ Parent SFAN ArcGIS Online (AGOL) and Portal Extract, Transform and Load (ETL) sc
 defined by protocl for ETL of passed feature layers (e.g. Survey 123 or Arc Field Maps) to the respective protocol
 database and table schema locations.
 
+Workflow can be accomplished connecting to AGOL/Portal via an OAuth 2.0. Conversely if you have ArcGISPro installed you
+can connect via the 'Pro' python environment installed on your computer, which will use your windows/active directory
+credentials to connect to AGOL/Portal thus not needing a OAuth 2.0 token with subsequent workflow.
+
 Output:
 
 Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
@@ -17,7 +21,6 @@ Created By - Kirk Sherrill - Data Scientist/Manager San Francisco Bay Area Netwo
 import pandas as pd
 import sys
 import os
-import session_info
 import traceback
 import datetime
 from datetime import datetime
@@ -48,11 +51,9 @@ layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
-credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
+credentials = 'ArcGISPro'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id
 pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
-# Python Environment - applicable if processing with ArcGISPro environment credentials, else will not be used
-agolEnv = r'C:\Program Files\ArcGIS\Pro\bin\Python\envs\arcgispro-py3\python.exe'
 #################################
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
@@ -67,7 +68,7 @@ def main():
     logger = logging.getLogger(__name__)
 
     try:
-        session_info.show()
+
         # Set option in pandas to not allow chaining (views) of dataframes, instead force copy to be performed.
         pd.options.mode.copy_on_write = True
 
@@ -91,7 +92,7 @@ def main():
         print(etlInstance.__dict__)
 
         # Create the generalArcGIS instance
-        generalArcGIS = agl.generalArcGIS(agolEnv=agolEnv, layerID=layerID, cloudPath=cloudPath, credentials=credentials,
+        generalArcGIS = agl.generalArcGIS(layerID=layerID, cloudPath=cloudPath, credentials=credentials,
                                           pythonApp_ID=pythonApp_ID)
         # Print the name space of the instance
         print(generalArcGIS.__dict__)
