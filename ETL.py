@@ -8,6 +8,7 @@ import generalDM as dm
 import ETL_SNPLPORE as SNPLP
 import ArcGIS_API as agl
 import logging
+import log_config
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class etlInstance:
 
             # Create the protocol specific ETL instance
             if etlInstance.protocol == 'SNPLPORE':
-                etlProtocolInstance = SNPLP.etl_SNPLPORE(outDFDic)
+                outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance)
             else:
                 logMsg = f"WARNING Protocol Specific Instance - {etlInstance.protocol} - has not been defined."
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -78,5 +79,5 @@ class etlInstance:
 
             logMsg = (f'ERROR - An error occurred process_ETLRequest: {e}')
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.critical(logMsg, exc_info=True)
+            logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
