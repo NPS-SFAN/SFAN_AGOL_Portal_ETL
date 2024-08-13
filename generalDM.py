@@ -603,6 +603,50 @@ class generalDMClass:
 
         return outDFDic
 
+    def appendDataSet(cnxn, dfToAppend, appendToTable, insertQuery, dmInstance):
+
+        """
+        Appends the pass insert query using the input data frame to append to the defined table. ODBC Connection
+        is made to the defined table
+
+        :param cnxn: ODBC database connection
+        :param dfToAppend:  dataframe being appended
+        :param appendToTable - table being appended to in the passed database
+        :param insertQuery - query defining the append query
+        :param dmInstance - data management instance
+
+        :return:
+        """
+
+        try:
+
+            # Create a cursor to execute SQL commands for Append
+            cursor = cnxn.cursor()
+
+            # Iterate over each row in the DataFrame and insert it into the table
+            for index, row in dfToAppend.iterrows():
+                values = tuple(row)
+                cursor.execute(insertQuery, values)
+                logMsg = f'Appended Records: {values}'
+                generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.info(logMsg)
+                # Commit the changes to the database
+                cnxn.commit()
+
+            # Close the cursor and database connection
+            cursor.close()
+            cnxn.close()
+
+            logMsg = f'Records Successfully import to {appendToTable}'
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR - "Exiting Error appendDataSet: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
