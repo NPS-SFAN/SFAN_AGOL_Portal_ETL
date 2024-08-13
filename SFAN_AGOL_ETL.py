@@ -25,6 +25,7 @@ import ETL as etl
 import generalDM as dm
 import ArcGIS_API as agl
 import logging
+import log_config
 
 
 # Get the logger
