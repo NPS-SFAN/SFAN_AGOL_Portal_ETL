@@ -51,7 +51,7 @@ layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
-credentials = 'ArcGISPro'    # ('OAuth'|'ArcGISPro')
+credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id
 pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
 #################################
@@ -101,7 +101,7 @@ def main():
         # Proceed to the Workflow to process the defined ETL Routines
         ################
 
-        # Go to QC Processing Routines
+        # Go to ETL Processing Routines
         etl.etlInstance.process_ETLRequest(generalArcGIS=generalArcGIS, etlInstance=etlInstance, dmInstance=dmInstance)
 
         # Message Script Completed
