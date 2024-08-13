@@ -17,12 +17,11 @@ class generalArcGIS:
 
     numArcGISInstances = 0
 
-    def __init__(self, agolEnv, layerID, cloudPath, credentials, pythonApp_ID):
+    def __init__(self, layerID, cloudPath, credentials, pythonApp_ID):
 
         """
         Define the instantiated generalArcGIS instantiation attributes
     
-        :param agolEnv: Full path to the ArcGISPro desktop environment
         :param layerID: AGOL/Portal ID reference value
         :param cloudPath: URL to the NPS or Portal 
         :param credentials: Defines if using OAuth 2.0 or ArcGISPro credentials
@@ -32,7 +31,6 @@ class generalArcGIS:
         :return: generalArcGIS instance with passed variable definitions and defined methods
         """
 
-        self.agolEnv = agolEnv
         self.layerID = layerID
         self.cloudPath = cloudPath
         self.credentials = credentials
@@ -75,7 +73,7 @@ class generalArcGIS:
 
         except Exception as e:
 
-            logMsg = f'ERROR - processFeatureLayer - {generalArcGIS.agolEnv} - {etlInstance.flID}: {e}'
+            logMsg = f'ERROR - processFeatureLayer - {generalArcGIS.cloudPath} - {etlInstance.flID}: {e}'
             print(logMsg)
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg)
@@ -117,7 +115,7 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
         result.download(outWorkDir)
 
         #Add Log Messages
-        logMsg = f'Successfully Downloaded from - {generalArcGIS.agolEnv} - {dataTitle}'
+        logMsg = f'Successfully Downloaded from - {generalArcGIS.cloudPath} - {dataTitle}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
         traceback.print_exc(file=sys.stdout)
@@ -126,7 +124,7 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
 
     except Exception as e:
 
-        logMsg = f'ERROR - Downloading from - {etlInsance.agolEnv} - {etlInstance.layerID}: {e}'
+        logMsg = f'ERROR - Downloading from - {generalArcGIS.cloudPath} - {etlInstance.layerID}: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg)
         traceback.print_exc(file=sys.stdout)
@@ -139,7 +137,8 @@ def connectAGOL_ArcGIS(generalArcGIS, dmInstance):
     This is an alternative to processing an Python Application ID in meethod 'connecdtAGOL_clientID'.
 
     Full Path to the ArcGISPro Python Environment .exe on your local computer often will be
-     C:/Program Files/ArcGIS/Pro/bin/Python/envs/arcgispro-py3/python.exe
+     C:/Program Files/ArcGIS/Pro/bin/Python/envs/arcgispro-py3/python.exe.  If you are behind the VPN you can simply
+     connect to the 'Pro' environment.
 
     :param generalArcGIS: generalArcGIS instance
     :param dmInstance: dmInstance instance
@@ -147,15 +146,14 @@ def connectAGOL_ArcGIS(generalArcGIS, dmInstance):
     :return: Return GIS Connection
     """
     pathToAGOL = generalArcGIS.cloudPath
-    pythonEnvGISPro = generalArcGIS.agolEnv
 
     try:
-        #gis = GIS(pathToAGOL, client_id=pythonApp_ID)
-        gis = GIS(pathToAGOL)
+
+        #gis = GIS(pathToAGOL)
         gis = GIS('Pro')
         print(f"Successfully connected to - {pathToAGOL}")
 
-        return GIS
+        return gis
 
     except Exception as e:
 
