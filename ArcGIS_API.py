@@ -52,19 +52,14 @@ class generalArcGIS:
 
         try:
 
-            #STOPPED HERE 8/12/2024 - connectAGOL_clientID not working is seeing an extra argument.
             # Connect to the Cloud via pass credentials workflow
             if generalArcGIS.credentials.lower() == 'oauth':
-                cloudPath_LU = str(generalArcGIS.cloudPath)
-                pythonApp_LU = str(generalArcGIS.pythonApp_ID)
-                outGIS = connectAGOL_clientID(generalArcGIS.cloudPath, generalArcGIS.pythonApp_ID,
-                                                            dmInstance)
-
+                outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
             else: #Connect via ArcGISPro Environment
-                outGIS = generalArcGIS.connectAGOL_ArcGIS(cloudPath_LU, pythonApp_LU)
+                outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
 
             #Import the feature layer
-            outFeatureLayer = generalArcGIS.importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
             outzipPath = outFeatureLayer[0]
             outName = outFeatureLayer[1]
 
@@ -85,91 +80,102 @@ class generalArcGIS:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def importFeatureLayer(outGIS, generalArcGIS, etlInstance):
-        """
-        Workflow for processing of the passed AGOL/Portal ID
+def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
+    """
+    Workflow for processing of the passed AGOL/Portal ID
 
-        :param outGIS: GIS Connection
-        :param generalArcGIS: ArcGIS instance
-        :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance
+    :param outGIS: GIS Connection
+    :param generalArcGIS: ArcGIS instance
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
 
-        :return: outZipFull: full path to zip file of imported layer for AGOL/Portal
-        dataTitle: tile of the feature layer that was imported
-        """
+    :return: outZipFull: full path to zip file of imported layer for AGOL/Portal
+    dataTitle: tile of the feature layer that was imported
+    """
 
-        try:
-            layerIDLU = generalArcGIS.layerID
+    try:
+        layerIDLU = generalArcGIS.layerID
 
-            #Pull the desired AGOL content via the AGOL ID
-            item = outGIS.content.get(layerIDLU)
+        #Pull the desired AGOL content via the AGOL ID
+        item = outGIS.content.get(layerIDLU)
 
-            # Define DateTile for Feature Layer being exported
-            dataTitle = item.title
+        # Define DateTile for Feature Layer being exported
+        dataTitle = item.title
 
-            outZipFull = f'{etlInstance.outDir}\workspace\outLayer_{dataTitle}.zip'
-            result = item.export(dataTile, '.csv', wait=True)
-            outWorkDir = f'{etlInstance.outDir}\\workspace'
-            result.download(outWorkDir)
+        outZipFull = f'{etlInstance.outDir}\workspace\outLayer_{dataTitle}.zip'
+        result = item.export(dataTitle, 'CSV', wait=True)
+        outWorkDir = f'{etlInstance.outDir}\\workspace'
+        result.download(outWorkDir)
 
-            logMsg = f'Successfully Downloaded from - {etlInsance.agolEnv} - {dataTitle}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.log(logMsg, exc_info=True)
-            traceback.print_exc(file=sys.stdout)
+        logMsg = f'Successfully Downloaded from - {etlInsance.agolEnv} - {dataTitle}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.log(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
 
-            return outZipFull, dataTitle
+        return outZipFull, dataTitle
 
-        except Exception as e:
+    except Exception as e:
 
-            logMsg = f'ERROR - Downloading from - {etlInsance.agolEnv} - {etlInstance.layerID}: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.critical(logMsg, exc_info=True)
-            traceback.print_exc(file=sys.stdout)
+        logMsg = f'ERROR - Downloading from - {etlInsance.agolEnv} - {etlInstance.layerID}: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
 
-    def connectAGOL_clientID(inPath, pythonApp_ID, dmInstance):
 
-        """
-        Connect to defined AGOL or Portal Path via a passed Python Application OAuth 2.0 Credential
 
-        :param cloudPath: Path to ESRI service being ETL processed
-        :param pythonApp_ID: Python Application OAuth 2.0 credential
+def connectAGOL_ArcGIS(generalArcGIS, dmInstance):
+    """
+    Connect to defined AGOL or Portal Path via the ArcGISPro Environment which will use the NPS AD credentials.
+    This is an alternative to processing an Python Application ID in meethod 'connecdtAGOL_clientID'.
 
-        :return: Return GIS Connection to AGOL or Portal for the current user
-        """
+    Full Path to the ArcGISPro Python Environment .exe on your local computer often will be
+     C:/Program Files/ArcGIS/Pro/bin/Python/envs/arcgispro-py3/python.exe
 
-        try:
-            gis = GIS(inPath, client_id=pythonApp_ID)
-            print(f"Successfully connected to - {cloudPath}")
+    :param generalArcGIS: generalArcGIS instance
+    :param dmInstance: dmInstance instance
 
-            return gis
-        except Exception as e:
+    :return: Return GIS Connection
+    """
+    pathToAGOL = generalArcGIS.cloudPath
+    pythonEnvGISPro = generalArcGIS.agolEnv
 
-            logMsg = f'ERROR - "Exiting Error connectAGOl_clientID - ArcGIS_API.py: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.critical(logMsg, exc_info=True)
-            traceback.print_exc(file=sys.stdout)
+    try:
+        #gis = GIS(pathToAGOL, client_id=pythonApp_ID)
+        gis = GIS(pathToAGOL)
+        gis = GIS('Pro')
+        print(f"Successfully connected to - {pathToAGOL}")
 
-    def connectAGOL_ArcGIS(cloudPath, pythonEnvGISPro, dmInstance):
-        """
-        Connect to defined AGOL or Portal Path via the ArcGISPro Environment which will use the NPS AD credentials.
-        This is an alternative to processing an Python Application ID in meethod 'connecdtAGOL_clientID'.
+        return GIS
 
-        :param cloudPath: Path to ESRI service being proceeded
-        :param pythonEnvGISPro:  Full Path to the ArcGISPro Python Environment .exe on your local computer
-                                Often will be C:/Program Files/ArcGIS/Pro/bin/Python/envs/arcgispro-py3/python.exe
+    except Exception as e:
 
-        :return: Return GIS Connection
-        """
+        logMsg = f'ERROR - "Exiting Error connectAGOl_ArcGIS - ArcGIS_API.py: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
 
-        try:
-            gis = GIS(cloudPath, client_id=pythonApp_ID)
-            print(f"Successfully connected to - {cloudPath}")
 
-            return GIS
+def connectAGOL_clientID(generalArcGIS, dmInstance):
 
-        except Exception as e:
+    """
+    Connect to defined AGOL or Portal Path via a passed Python Application OAuth 2.0 Credential
 
-            logMsg = f'ERROR - "Exiting Error connectAGOl_ArcGIS - ArcGIS_API.py: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.critical(logMsg, exc_info=True)
-            traceback.print_exc(file=sys.stdout)
+    :param generalArcGIS: generalArcGIS instance
+    :param dmInstance: dmInstance instance
+
+    :return: Return GIS Connection to AGOL or Portal for the current user
+    """
+
+    pathToAGOL = generalArcGIS.cloudPath
+    pythonID = generalArcGIS.pythonApp_ID
+    try:
+        gis = GIS(pathToAGOL, client_id=pythonID)
+        print(f"Successfully connected to - {pathToAGOL}")
+
+        return gis
+    except Exception as e:
+
+        logMsg = f'ERROR - "Exiting Error connectAGOl_clientID - ArcGIS_API.py: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
