@@ -554,7 +554,7 @@ class generalDMClass:
         :return:
         """
 
-        unZipPath = f'{outDir}\\{outName}'
+        outZipPath = f'{outDir}\\{outName}'
         if os.path.exists(outZipPath):
             pass
         else:
@@ -563,7 +563,7 @@ class generalDMClass:
         # Unzip and export to the workspace
         with ZipFile(zipPath, 'r') as zip:
             print('Unzipping files')
-            zip.extractall(path=outDir)
+            zip.extractall(path=outZipPath)
 
 
     def importFilesToDF(inDir):
@@ -582,8 +582,8 @@ class generalDMClass:
         fileList = glob.glob(filePattern)
 
         for file in fileList:
-            file_name = file.split('/')[-1].split('.')[0]
-            fileType = os.path.basename(file)
+            file_name = os.path.splitext(os.path.basename(file))[0]
+            fileType = os.path.splitext(os.path.basename(file))[1]
 
             if fileType == ".csv":
                 df = pd.read_csv(file)
@@ -599,7 +599,7 @@ class generalDMClass:
             outDFDic[file_name] = df
             logMsg = f"Successfully imported - {file_name} - to dataframe."
             print(logMsg)
-            logging.info(logMsg, exc_info=True)
+            logging.info(logMsg)
 
         return outDFDic
 
