@@ -124,7 +124,7 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
 
     except Exception as e:
 
-        logMsg = f'ERROR - Downloading from - {generalArcGIS.cloudPath} - {etlInstance.layerID}: {e}'
+        logMsg = f'ERROR - Downloading from - {generalArcGIS.cloudPath} - {etlInstance.flID}: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg)
         traceback.print_exc(file=sys.stdout)
@@ -149,8 +149,12 @@ def connectAGOL_ArcGIS(generalArcGIS, dmInstance):
 
     try:
 
-        #gis = GIS(pathToAGOL)
+        # Not Sure how to get a defined path for 'AGOL' or 'Portal' and include the '
+        #gis = GIS(pathToAGOL, None, None, None, None, False, True,
+        #          None, None, 'Pro')
+        #gis = GIS(url=pathToAGOL, username='Pro')
         gis = GIS('Pro')
+
         print(f"Successfully connected to - {pathToAGOL}")
 
         return gis
