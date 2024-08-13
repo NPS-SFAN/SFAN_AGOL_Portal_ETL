@@ -8,6 +8,7 @@ import generalDM as dm
 import logging
 import arcgis
 from arcgis.gis import GIS
+import log_config
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,8 @@ class generalArcGIS:
 
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
-
-            fullPathZipped = f"{outzipPath}\\{outName}"
+            # Path to Unzipped files
+            fullPathZipped = f"{etlInstance.outDir}\\{outName}"
             # Import Extracted Files to Dataframes
             outDFDic = dm.generalDMClass.importFilesToDF(inDir=fullPathZipped)
 
@@ -74,10 +75,10 @@ class generalArcGIS:
 
         except Exception as e:
 
-            logMsg = f'ERROR - processFeatureLayer - {etlInstance.agolEnv} - {etlInstance.layerID}: {e}'
-            print (logMsg)
+            logMsg = f'ERROR - processFeatureLayer - {generalArcGIS.agolEnv} - {etlInstance.flID}: {e}'
+            print(logMsg)
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.critical(logMsg, exc_info=True)
+            logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
 
 def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
@@ -102,14 +103,23 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
         # Define DateTile for Feature Layer being exported
         dataTitle = item.title
 
-        outZipFull = f'{etlInstance.outDir}\workspace\outLayer_{dataTitle}.zip'
+        outZipFull = f'{etlInstance.outDir}\\{dataTitle}.zip'
         result = item.export(dataTitle, 'CSV', wait=True)
-        outWorkDir = f'{etlInstance.outDir}\\workspace'
+        outWorkDir = f'{etlInstance.outDir}'
+        #Delete outZipFull if exists
+        if os.path.exists(outZipFull):
+            os.remove(outZipFull)
+            logMsg = f'Deleted existing zip - {outZipFull}'
+            print(logMsg)
+            logging.info(logMsg)
+
+        #Export Result to the zip file
         result.download(outWorkDir)
 
-        logMsg = f'Successfully Downloaded from - {etlInsance.agolEnv} - {dataTitle}'
+        #Add Log Messages
+        logMsg = f'Successfully Downloaded from - {generalArcGIS.agolEnv} - {dataTitle}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-        logging.log(logMsg, exc_info=True)
+        logging.info(logMsg)
         traceback.print_exc(file=sys.stdout)
 
         return outZipFull, dataTitle
@@ -118,7 +128,7 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
 
         logMsg = f'ERROR - Downloading from - {etlInsance.agolEnv} - {etlInstance.layerID}: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-        logging.critical(logMsg, exc_info=True)
+        logging.critical(logMsg)
         traceback.print_exc(file=sys.stdout)
 
 
