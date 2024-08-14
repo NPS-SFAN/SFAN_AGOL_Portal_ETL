@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Protocol Being Processes
 protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240812 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240813 - Copy.accdb'
 
 # Year Being Processed
 inYear = 2023
@@ -51,7 +51,7 @@ layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
-credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
+credentials = 'ArcGISPro'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id
 pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
 #################################
