@@ -644,7 +644,7 @@ class generalDMClass:
         except Exception as e:
 
             logMsg = f'WARNING ERROR - "Exiting Error appendDataSet: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
@@ -686,7 +686,60 @@ class generalDMClass:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+    def defineFieldTypesDF(dmInstance, fieldTypeDic, inDF):
+        """
+        For fields in the pass 'inDF' dataframe, set the fields in 'fieldTypeDic' to the defined field type.
+        Note Date and Time fields are deferentiated with Time fields having a *Time* in the field name.
+        T
+        :param dmInstance: Data management Instance
+        :param fieldTypeDic: Field type dictionary defining the fields and field type per field
+        :param dfIn: dataframe to which the field type dictionary 'fieldTypeDic' will be applied
 
+        :return: outDF: Dataframe with the field type crosswalk in fieldTypeDic applied
+        """
+
+        try:
+
+            # Iterating over the dictionary to update field types
+            for field, desired_type, dt_format in zip(fieldTypeDic['Field'], fieldTypeDic['Type'],
+                                                     fieldTypeDic['DateTimeFormat']):
+                # Check if the field exists in the dataframe and if the type does not match
+                if field in inDF.columns:
+                   current_type = inDF[field].dtype
+                   if current_type != desired_type:
+                       # Convert to the desired type
+                       if desired_type == 'object':
+                           inDF[field] = inDF[field].astype(str)
+                       elif desired_type == 'datetime64' and dt_format != "na":
+                           if dt_format == "%H:%M":
+                               # Handle time conversion separately using datetime.strptime
+                               inDF[field] = inDF[field].apply(
+                                   lambda x: datetime.strptime(x, dt_format).time() if pd.notnull(x) else None)
+                           # Date and DateTime formats - must define the dt_format to match the actual time in the
+                           # survey format (e.g. if only date then %M/%D/%Y or with time included %m/%d/%Y %H:%M)
+                           else:
+                               # Handle date conversion
+                               inDF[field] = pd.to_datetime(inDF[field], format=dt_format,
+                                                                   errors='coerce')
+                       elif desired_type == 'int64':
+                           inDF[field] = pd.to_numeric(inDF[field], errors='coerce', downcast='integer')
+                       print(
+                           f"Field '{field}' converted from {current_type} to {desired_type} with format '{dt_format}'")
+
+            # Output the updated dataframe
+            print(inDF.dtypes)
+
+            logMsg = f'Success applying field type crosswalk - defineFieldTypesDF'
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return inDF
+
+        except Exception as e:
+            logMsg = f'WARNING ERROR - applying field type crosswalk - defineFieldTypesDF-{e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
