@@ -50,21 +50,25 @@ class generalArcGIS:
         """
 
         try:
-
+            ####Temp Turning Off While AGOL is having performance issues 8/14/2024
             # Connect to the Cloud via pass credentials workflow
-            if generalArcGIS.credentials.lower() == 'oauth':
-                outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
-            else: #Connect via ArcGISPro Environment
-                outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            # if generalArcGIS.credentials.lower() == 'oauth':
+            #     outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            # else: #Connect via ArcGISPro Environment
+            #     outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            #
+            # #Import the feature layer
+            # outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            # outzipPath = outFeatureLayer[0]
+            # outName = outFeatureLayer[1]
 
-            #Import the feature layer
-            outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
-            outzipPath = outFeatureLayer[0]
-            outName = outFeatureLayer[1]
+            # #Extract Exported zip file and import .csv files to DBF files
+            # dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
+            # #Path to Unzipped files
 
-            # Extract Exported zip file and import .csv files to DBF files
-            dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
-            # Path to Unzipped files
+            #Temporary outName variable
+            outName = "SNPL2024v1"
+
             fullPathZipped = f"{etlInstance.outDir}\\{outName}"
             # Import Extracted Files to Dataframes
             outDFDic = dm.generalDMClass.importFilesToDF(inDir=fullPathZipped)
@@ -101,8 +105,15 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
         # Define DateTile for Feature Layer being exported
         dataTitle = item.title
 
-        outZipFull = f'{etlInstance.outDir}\\{dataTitle}.zip'
-        result = item.export(dataTitle, 'CSV', wait=True)
+        # Define Unique Name for item being exported - this will be exported to your AGOL Content home page thus
+        # a unique name is desirable.
+        from datetime import datetime
+        dateTimeNow = datetime.now().strftime('%Y%m%d-%H%M%S')
+        dataTileUnique = f'{item.title}_{dateTimeNow}'
+
+        outZipFull = f'{etlInstance.outDir}\\{dataTileUnique}.zip'
+        result = item.export(dataTileUnique, export_format='CSV', wait=True)
+
         outWorkDir = f'{etlInstance.outDir}'
         #Delete outZipFull if exists
         if os.path.exists(outZipFull):
@@ -111,16 +122,18 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
             print(logMsg)
             logging.info(logMsg)
 
+
         #Export Result to the zip file
         result.download(outWorkDir)
 
+
         #Add Log Messages
-        logMsg = f'Successfully Downloaded from - {generalArcGIS.cloudPath} - {dataTitle}'
+        logMsg = f'Successfully Downloaded from - {generalArcGIS.cloudPath} - {dataTileUnique}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
         traceback.print_exc(file=sys.stdout)
 
-        return outZipFull, dataTitle
+        return outZipFull, dataTileUnique
 
     except Exception as e:
 
