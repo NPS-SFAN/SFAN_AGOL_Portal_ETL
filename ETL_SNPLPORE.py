@@ -102,17 +102,136 @@ class etl_SNPLPORE:
         """
 
         try:
-            #Export the Survey Dataframe for Directionary list
-            inDF = outDFDic[0]
+            #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'Survey' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['GlobalID', 'Survey Location', "SurveyDate", "Time Start Survey", "Time End Survey",
+                            "CreationDate", "Creator"]].rename(
+                columns={'GlobalID': 'Event_ID',
+                         'SurveyDate': 'Start_Date',
+                         'Time Start Survey': 'Start_Time',
+                         'Time End Survey': 'End_Time',
+                         'CreationDate': 'Created_Date',
+                         'Creator': 'Created_By'})
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+            #To DateTime Field
+            outDFSubset['Start_Date'] = pd.to_datetime(outDFSubset['Start_Date'])
+            # Format to m/d/yyy
+            outDFSubset['Start_Date'] = outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
+
+            # Insert 'Location_ID' field
+            outDFSubset.insert(1, "Location_ID", None)
+
+            # Insert 'Protocol_Name' field
+            outDFSubset.insert(2, "Protocol_Name", "PORE SNPL")
+
+            fieldLen = outDFSubset.shape[1]
+            # Insert 'DataProcesingLevelID' = 1
+            outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
+
+            # Insert 'dataProcesingLevelDate
+            from datetime import datetime
+            dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+            outDFSubset.insert(fieldLen + 1, "DataProcessingLevelDate", dateNow)
+
+            # Insert 'dataProcesingLevelUser
+            outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
+
+
+            #####################################
+            # Define Location_Id via lookup table
+            #####################################
+
+            # Read in the Lookup Table
+            inQuery = f"Select * FROM tbl_Locations';"
+
+            outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+            # Perform the lookup to field 'Location_ID'
+            outDF_Step2 = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLookup,
+                                                                 "Loc_Name", "Location_ID",
+                                                                 outDFSubset, "Survey Location",
+                                                                 "Location_ID")
+
+            # Drop field "Survey Location
+            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location'])
+
+
+            ############################
+            # Define desired field types
+            ############################
+
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ["Event_ID", "Location_ID", "Protocol_Name", "Start_Date", "Start_Time", "End_Time",
+                                    "Created_Date", "Created_By", "DataProcessingLevelID", "DataProcessingLevelDate",
+                                    "DataProcessingLevelUser"],
+                             'Type': ["object", "object", "object", "datetime64", "datetime64", "datetime64",
+                                    "datetime64", "object", "int64", "DataProcessingLevelDate",
+                                    "object"],
+                            'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "%H:%M", "%H:%M",
+                                    "%m/%d/%Y %H:%M", "na", "na", "na",
+                                    "na"]}
+
+            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
+
+            # Append outDFSurvey to 'tbl_Events'
+            # Pass final Query to be appended
+            insertQuery = (f'INSERT INTO tbl_Events (Event_ID, Location_ID, Protocol_Name, Start_Date, Start_Time, '
+                           f'End_Time, Created_Date, Created_By, DataProcessingLevelID, DataProcessingLevelDate, '
+                           f'DataProcessingLevelUser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
+                                                        dmInstance)
+
+            # STOPPED HERE 8/14/2024 KRS
+
+            ##################
+            # Define Observers -  table xref_EventContacts
+            ##################
+
+
+
+
+
+
+            ##################
+            # Create tbl_Events_Details record - push field 'Survey Note' to 'Event_Notes', LE Violation,
+            # LE Violation Notes, Predator Stop Time (min), DeviceName
+            ###################
+
+
+
+
+            # X and Y Fields are being ignored, These coordiantes are being pushed to the SNPL Observations table
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
             #Define final query
             insertQuery = f""
-            # Pass final Query to be appended
-            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            outAppend = dm.generalDMClass.appendDataSet(cnxn, dfToAppend, "tblEvents", insertQuery,
-                                                        dmInstance)
+
 
             logMsg = f"Success ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -149,10 +268,7 @@ class etl_SNPLPORE:
 
             # Define final query
             insertQuery = f""
-            # Pass final Query to be appended
-            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            outAppend = dm.generalDMClass.appendDataSet(cnxn, dfToAppend, "tblEvents", insertQuery,
-                                                        dmInstance)
+
 
 
             logMsg = f"Success ETL_SNPLPORE.py - process_Observations."
@@ -189,7 +305,7 @@ class etl_SNPLPORE:
 
         try:
             # Pass Output Data Frame
-            outDFSurvey = []
+            outDFBands = []
 
             logMsg = f"Success ETL_SNPLPORE.py - process_Bands."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
