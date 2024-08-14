@@ -648,5 +648,45 @@ class generalDMClass:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+
+    def applyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
+        """
+        Define a field (i.e. dfDefineField) via a lookup table (i.e. dfLookupTable) and a join on two data frames.
+
+        :param dmInstance: Data management Instance
+        :param dfLookupTable: Imported data from of the lookup table
+        :param lookupField: field in the lookupTable to lookup
+        :param lookupValue: field in the lookupTable with the value to be applied.
+        :param dfIn: dataframe to be joined to the lookup table
+        :param dflookupField: field in the dataframe to which the lookupTable join will be performed
+        :param dfDefineField: field in the dataframe to which the lookupTable lookupField value will be updated/applied
+
+        :return: outDF: Output dataframe with the updated lookupfield applied
+        """
+
+        try:
+
+            # Join via Merge Lookup data from to the passed dataframe via join fields
+            merged_df = pd.merge(dfIn, dfLookupTable, how='left', left_on=dflookupField, right_on=lookupField)
+
+            lookupField_y = f'{lookupValue}_y'
+            # Update defined field with the lookup value
+            dfIn[dfDefineField] = merged_df[lookupField_y]
+
+            logMsg = f'Success applying lookup for lookup Field:{lookupField} - lookup Value Field: {lookupField}'
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return dfIn
+
+        except Exception as e:
+            logMsg = (f'WARNING ERROR - applyLookupToDFField for lookup Field:{lookupField} - lookup Value Field:'
+                      f' {lookupField} - {e}')
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+
+
     if __name__ == "__name__":
         logger.info("generalDM.py")
