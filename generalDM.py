@@ -775,10 +775,14 @@ class generalDMClass:
                                    lambda x: datetime.strptime(x, dt_format).time() if pd.notnull(x) else None)
                            # Date and DateTime formats - must define the dt_format to match the actual time in the
                            # survey format (e.g. if only date then %M/%D/%Y or with time included %m/%d/%Y %H:%M)
-                           else:
+                           elif dt_format == '%m/%d/%Y':
                                # Handle date conversion
                                inDF[field] = pd.to_datetime(inDF[field], format=dt_format,
                                                                    errors='coerce')
+                           elif dt_format == '%m/%d/%Y %I:%M:%S %p':
+                               # Do Nothing
+                               print(f'No Conversion for - {dt_format}')
+
                        elif desired_type == 'int64' or desired_type == 'int32':
                             inDF[field] = pd.to_numeric(inDF[field], errors='coerce', downcast='integer')
 
