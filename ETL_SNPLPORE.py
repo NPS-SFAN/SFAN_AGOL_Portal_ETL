@@ -180,7 +180,7 @@ class etl_SNPLPORE:
                                     "datetime64", "object", "int64", "DataProcessingLevelDate",
                                     "object"],
                             'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "%H:%M", "%H:%M",
-                                    "%m/%d/%Y %H:%M", "na", "na", "na",
+                                    "%m/%d/%Y %I:%M:%S %p", "na", "na", "na",
                                     "na"]}
 
             outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
