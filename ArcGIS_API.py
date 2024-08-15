@@ -52,22 +52,22 @@ class generalArcGIS:
         try:
             ####Temp Turning Off While AGOL is having performance issues 8/14/2024
             # Connect to the Cloud via pass credentials workflow
-            # if generalArcGIS.credentials.lower() == 'oauth':
-            #     outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
-            # else: #Connect via ArcGISPro Environment
-            #     outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
-            #
-            # #Import the feature layer
-            # outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
-            # outzipPath = outFeatureLayer[0]
-            # outName = outFeatureLayer[1]
+            if generalArcGIS.credentials.lower() == 'oauth':
+                outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            else: #Connect via ArcGISPro Environment
+                outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
 
-            # #Extract Exported zip file and import .csv files to DBF files
-            # dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
-            # #Path to Unzipped files
+            # Import the feature layer
+            outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            outzipPath = outFeatureLayer[0]
+            outName = outFeatureLayer[1]
 
-            #Temporary outName variable
-            outName = "SNPL2024v1"
+            # Extract Exported zip file and import .csv files to DBF files
+            dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
+            # Path to Unzipped files
+
+            # #Temporary outName variable
+            # outName = "SNPL2024v1"
 
             fullPathZipped = f"{etlInstance.outDir}\\{outName}"
             # Import Extracted Files to Dataframes
