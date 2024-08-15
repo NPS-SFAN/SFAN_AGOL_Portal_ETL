@@ -649,6 +649,64 @@ class generalDMClass:
             traceback.print_exc(file=sys.stdout)
 
 
+    def appendDataSetwDic(cnxn, dfToAppend, appendToTable, fieldTypeDic, insertQuery, dmInstance):
+
+        """
+        Appends the pass insert query using the input data frame to append to the defined table. ODBC Connection
+        is made to the defined table
+
+        :param cnxn: ODBC database connection
+        :param dfToAppend:  dataframe being appended
+        :param appendToTable - table being appended to in the passed database
+        :param fieldTypeDic: Field Definitions Dictionary
+        :param insertQuery - query defining the append query
+        :param dmInstance - data management instance
+
+        :return:
+        """
+
+        try:
+
+            # Create a cursor to execute SQL commands for Append
+            cursor = cnxn.cursor()
+
+            # Iterate over the dataframe rows
+            for index, row in dfToAppend.iterrows():
+                values_to_insert = []
+
+                # Iterate over the fields in the dictionary
+                for field, dtype in zip(fieldTypeDic['Field'], fieldTypeDic['Type']):
+                    # Check if the field is numeric
+                    if dtype.startswith('int') or dtype.startswith('float'):
+                        value = None if pd.isna(row[field]) else row[field]
+                    else:
+                        value = row[field]
+
+                    values_to_insert.append(value)
+
+                # Debugging: Print to check the values being inserted
+                print(f"Inserting: {values_to_insert}")
+
+                # Execute the insert query
+                cursor.execute(insertQuery, values_to_insert)
+            # Commit the transaction
+            cnxn.commit()
+
+            # Close the connection
+            cursor.close()
+            cnxn.close()
+
+            logMsg = f'Records Successfully import to {appendToTable}'
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR - "Exiting Error appendDataSetwDic: {e}'
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
     def applyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
         """
         Define a field (i.e. dfDefineField) via a lookup table (i.e. dfLookupTable) and a join on two data frames.
@@ -721,10 +779,14 @@ class generalDMClass:
                                # Handle date conversion
                                inDF[field] = pd.to_datetime(inDF[field], format=dt_format,
                                                                    errors='coerce')
-                       elif desired_type == 'int64':
-                           inDF[field] = pd.to_numeric(inDF[field], errors='coerce', downcast='integer')
-                       print(
-                           f"Field '{field}' converted from {current_type} to {desired_type} with format '{dt_format}'")
+                       elif desired_type == 'int64' or desired_type == 'int32':
+                            inDF[field] = pd.to_numeric(inDF[field], errors='coerce', downcast='integer')
+
+                       elif desired_type == 'float64' or desired_type == 'float32':
+                           inDF[field] = pd.to_numeric(inDF[field], errors='coerce', downcast='float')
+
+                       print(f"Field '{field}' converted from {current_type} to {desired_type} with format"
+                             f" '{dt_format}'")
 
             # Output the updated dataframe
             print(inDF.dtypes)
@@ -740,6 +802,16 @@ class generalDMClass:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+    def nan_to_none(x):
+        """
+        For passed value is Nans to Object none.  In Access Nan are imported as 1.#QNAN from panadas dataframes.
+        :param x: Value being checked
+
+        :return: x: value changed to None if was Nans
+        """
+
+        return x.astype(object).where(x.notna(), None)
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
