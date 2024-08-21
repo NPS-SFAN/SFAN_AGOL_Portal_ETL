@@ -320,23 +320,14 @@ class etl_SNPLPORE:
                          'Lat': 'Y_Coord'})
 
             ####################
-            # Create a Master Nest ID if it doesn't already Exist - the is a related table that must first be
+            # Create a Master Nest ID if it doesn't already Exist - Nest_ID is a related table that must first be
             # created before creating the Observation
-
-
             ####################
-            # Define Location_ID from the Survey Table
-            #####################
 
-
-
-
-
-
-
+            outDFNewNests = process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
             ##############################
-            # CleanUp Wrangle Steps
+            # CleanUp Wrangle Steps Observations Table
             ##############################
 
 
@@ -400,8 +391,7 @@ class etl_SNPLPORE:
             # tlu_BehaviorCategory, Parse out by 'Terriotry, Nest and Chick Behavoir Fields, Must handle other field
             ############################
 
-            print("Test")
-
+            outDFBehavior = process_Behaviors(etlInstance, dmInstance, outDFSubset)
 
 
 
@@ -508,21 +498,88 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def process_NestMasterInitial(self):
-
-
-
-def processSNPLContacts(etlInstance, dmInstance, outDFSurvey, outDFSubset):
+def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset):
     """
-    Define Observers in SNPL Survey Form table xref_EventContacts
-    Harvet Mutli-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
-    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
-
+    Create the the Nest_ID record in the 'tbl_Nest_Master' table for all observations if it doesn't already exist.
+    The 'tbl_Nest_Master' - 'Nest_ID' field in the 'tbl_SNPL_Observations' table must first be defined in the
+    'tbl_Nest_Master' before any SNPL Observations can be appended.
 
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
-    :param outDFSurvey: Survey Method Dataframe will be used to get the Event_ID
+    :param outDFSurvey: Survey data frame that was append to the
     :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+
+    :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
+    """
+
+    try:
+        outDFUniqueEventNest = outDFSubset[outDFSubset['Nest_ID'].notna()][['Event_ID', 'Nest_ID']].drop_duplicates()
+
+        # Merge the Unique Nest_ID - Event and Survey Data frames
+        merged_df = pd.merge(outDFSurvey, outDFUniqueEventNest, on='Event_ID')
+        # Sort on Nest_ID and Start_Date
+        merged_df = merged_df.sort_values(by=['Nest_ID', 'Start_Date'])
+
+        # Retain the first record by 'Nest_ID'
+        outDFNestIDFirst = merged_df.drop_duplicates(subset=['Nest_ID'], keep='first')
+
+
+        # Join to Check which 'Nest_ID, Year, and Location_ID composite primary key is not present Left join.
+        # Pull the Nest Master table
+        inQuery = f"Select * FROM tbl_Nest_Master;"
+        outDFNestMaster = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Perform an outer left join - these are the records to be append
+        outDFNestIDNew = pd.merge(outDFNestIDFirst, outDFNestMaster, on='Nest_ID', how='left', indicator=True)
+
+        outDFNestIDNewAppend = outDFNestIDNew[['Location_ID_x', 'Nest_ID', "Start_Date"]].rename(
+                    columns={'Location_ID_x': 'Location_ID'})
+
+        # Add additional required fields - Created_By, DataProcessingLevelUser. Note DPL_ID is defaulting to 1, and DPL
+        # data is defaulting to Now
+
+        # Add and Calculate Year Field
+        outDFNestIDNewAppend['Year'] = outDFNestIDNewAppend['Start_Date'].dt.year
+
+        # Drop 'Start_Date
+        outDFNestIDNewAppend = outDFNestIDNewAppend.drop(columns=['Start_Date'])
+
+        fieldLen = outDFNestIDNewAppend.shape[1]
+        # Add fields: Created_By, DataProcessingLevelUser
+        outDFNestIDNewAppend.insert(fieldLen, "Created_By", etlInstance.inUser)
+        outDFNestIDNewAppend.insert(fieldLen + 1, "DataProcessingLevelUser", etlInstance.inUser)
+
+        # Append the New Nest_ID values
+        insertQuery = (f'INSERT INTO tbl_Nest_Master (Location_ID, Nest_ID, Year, Created_By, DataProcessingLevelUser)'
+                       f' VALUES (?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, outDFNestIDNewAppend, "tbl_Nest_Master", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success process_NestMasterInitial - New Nest_Ids append to tbl_NestMaster."
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return outDFNestIDNewAppend
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def processSNPLContacts(inDF, etlInstance, dmInstance):
+    """
+    Define Observers in SNPL Survey Form table xref_EventContacts
+    Harvest Multi-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
+    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
 
     :return:
     """
@@ -641,6 +698,49 @@ def processSNPLContacts(etlInstance, dmInstance, outDFSurvey, outDFSubset):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def process_Behaviors(etlInstance, dmInstance, outDFSubset):
+
+    """
+    Populates the 'tbl_SNPL_Behaviors' table from the SNPL Observation Forms.
+    Parses out (i.e. multiple values possible, comma delimited) by fields 'Terriotry Behavior, Nest Behavior, Chick
+    Behavior and Other Behavior Fields.
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+
+    :return:outDFBehavior: Dataframe with the appended Behaviors to 'tbl_SNPL_Behaviors'
+    """
+
+    try:
+
+        # Read in lookup 'tlu_Behavior'
+        inQuery = f"Select * FROM tlu_Behavior;"
+        outDFBehavior = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Read in lookup 'tlu_Beavior_Category'
+        inQuery = f"Select * FROM tlu_BehaviorCategory;"
+        outDFBehaviorCat = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        
+
+
+
+
+
+        logMsg = f"Success process_Behaviors - ETL_SNPLPORE.py"
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return dfObserversOtherwLK
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - process_Behaviors - ETL_SNPLPORE.py: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
