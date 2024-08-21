@@ -52,22 +52,22 @@ class etl_SNPLPORE:
             ######
             # Process Survey Metadata Form
             ######
-            outDFSurvey = etl_SNPLPORE.proces_Survey(outDFDic, etlInstance, dmInstance)
+            outDFSurvey = etl_SNPLPORE.process_Survey(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process SNPL Observations Form
             ######
-            outDFObs = etl_SNPLPORE.proces_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######
             # Process Bands Sub Form
             ######
-            outDFBands = etl_SNPLPORE.proces_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
+            outDFBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
             # Process Predator
             ######
-            outDFPredator = etl_SNPLPORE.proces_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
 
 
@@ -87,7 +87,7 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def proces_Survey(outDFDic, etlInstance, dmInstance):
+    def process_Survey(outDFDic, etlInstance, dmInstance):
 
         """
         ETL routine for the parent survey form SFAN_SNPLPORE_Survey{YearVersion}- table.
@@ -276,7 +276,7 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def proces_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey):
+    def process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey):
 
         """
         ETL routine for the 'SNPL Observation' form - table 'SNPL_Observations'.
@@ -319,16 +319,33 @@ class etl_SNPLPORE:
                          'Long': 'X_Coord',
                          'Lat': 'Y_Coord'})
 
+            ####################
+            # Create a Master Nest ID if it doesn't already Exist - the is a related table that must first be
+            # created before creating the Observation
+
+
+            ####################
+            # Define Location_ID from the Survey Table
+            #####################
+
+
+
+
+
+
+
+
             ##############################
             # CleanUp Wrangle Steps
             ##############################
 
-            # STOPPED HERE 8/20/2024
+
             # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
-            cols_to_update = ["Nest_ID", "Territory Behavior", "Nest Behavior", "Chicks Behavior", "Other Behavior", "Specify other.", "Number_Eggs"]
+            cols_to_update = ["Nest_ID", "Territory Behavior", "Nest Behavior", "Chicks Behavior", "Other Behavior",
+                              "Specify other.", "Number_Eggs"]
             for col in cols_to_update:
                 outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
 
@@ -340,7 +357,7 @@ class etl_SNPLPORE:
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
             fieldTypeDic = {'Field': ['ParentGlobalID', 'GlobalID', 'Time', "Males", "Female", "Unknown", "Hatchling",
-                                "Fledgling", "Eggs", "Nest ID", "Territory Behavior", "Nest Behavior", " Chicks Behavior",
+                                "Fledgling", "Eggs", "Nest ID", "Territory Behavior", "Nest Behavior", "Chicks Behavior",
                                 "Other Behavior", "Specify other.", "SNPL Notes", "Long", "Lat"],
                 'Type': ["object", "object", "datetime64", "int32", "int32", "int32",
                          "int32", "int32", "int32", "object", "object", "object", "object",
@@ -351,15 +368,31 @@ class etl_SNPLPORE:
 
             outDFObs = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
+            # Number_Eggs field - variable was added mid-season, setting all 'None' values converts above to 0.
+            outDFObs['Number_Eggs'] = outDFObs['Number_Eggs'].fillna(0)
 
+            # Drop the Behavior fields
+            outDFObsOnly = outDFObs.drop(columns=["Territory Behavior", "Nest Behavior", "Chicks Behavior",
+                                "Other Behavior", "Specify other."])
 
+            # Add Coordinate Related Fields - Coord_Units, Coord_System, Datum
+            fieldLen = outDFObsOnly.shape[1]
+            # Insert 'Coord_Units' = m
+            outDFObsOnly.insert(fieldLen, "Coord_Units", "m")
+            # Insert 'Coord_System' = GCS
+            outDFObsOnly.insert(fieldLen + 1, "Coord_System", "GCS")
+            # Insert 'Datum' = WGS84
+            outDFObsOnly.insert(fieldLen + 2, "Datum", "WGS84")
 
             # Append outDFObs to 'tbl_SNPL_Observations'
             # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tbl_SNPL_Observations () VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            insertQuery = (f'INSERT INTO tbl_SNPL_Observations (Event_ID, SNPL_Data_ID, SNPL_Time, SNPL_Male,'
+                           f' SNPL_Female, SNPL_Unk, SNPL_Hatchlings, SNPL_FLedglings, Number_Eggs, Nest_ID, SNPL_Notes,'
+                           f' X_Coord, Y_Coord, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
+                           f' ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outDFObsOnly, "tbl_SNPL_Observations", insertQuery,
                                             dmInstance)
 
             ############################
@@ -367,7 +400,7 @@ class etl_SNPLPORE:
             # tlu_BehaviorCategory, Parse out by 'Terriotry, Nest and Chick Behavoir Fields, Must handle other field
             ############################
 
-
+            print("Test")
 
 
 
@@ -408,7 +441,7 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def proces_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs):
+    def process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs):
 
         """
         ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_SNPL_Banded'.
@@ -442,7 +475,7 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def proces_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey):
+    def process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey):
 
         """
         ETL routine for the 'Predator Observations' form - table 'PredatorObservations_2'.
@@ -475,19 +508,23 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+    def process_NestMasterInitial(self):
 
-def processSNPLContacts(inDF, etlInstance, dmInstance):
+
+
+def processSNPLContacts(etlInstance, dmInstance, outDFSurvey, outDFSubset):
     """
     Define Observers in SNPL Survey Form table xref_EventContacts
     Harvet Mutli-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
     Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
 
 
-    :param inDF - Survey Data Frame with Event ID and Contacts
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
+    :param outDFSurvey: Survey Method Dataframe will be used to get the Event_ID
+    :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
 
-    :return:outDFContacts: Data Frame with the contacts and associated event ID, will append to xref_EventContacts
+    :return:
     """
 
     try:
