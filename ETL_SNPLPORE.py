@@ -397,23 +397,6 @@ class etl_SNPLPORE:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
             logMsg = f"Success ETL_SNPLPORE.py - process_Observations."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
@@ -713,30 +696,90 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
     :param dmInstance: Data Management instance
     :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
 
-    :return:outDFBehavior: Dataframe with the appended Behaviors to 'tbl_SNPL_Behaviors'
+    :return:outDFBehavior_wOther: Dataframe with the appended Behaviors to 'tbl_SNPL_Behaviors'
     """
 
     try:
+        # Define behavior fields to process
+        fieldsToProcess = ['Territory Behavior', 'Nest Behavior', 'Chicks Behavior', 'Other Behavior']
+
+        # Create the blank dataframe to be populated
+        data = {
+            'SNPL_Data_ID': ['Test'],
+            'BehaviorClass': ['Test'],  # Example behavior classes
+            'Behavior': ['Test']  # Example behaviors
+        }
+
+        outDFBehavior = pd.DataFrame(data)
+        outDFBehavior = outDFBehavior[outDFBehavior['SNPL_Data_ID'] != 'Test']
 
         # Read in lookup 'tlu_Behavior'
         inQuery = f"Select * FROM tlu_Behavior;"
         outDFBehavior = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Read in lookup 'tlu_Beavior_Category'
-        inQuery = f"Select * FROM tlu_BehaviorCategory;"
-        outDFBehaviorCat = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        
+        # Iterate through the Fields
+        for field in fieldsToProcess:
+            # Subset to the desired fields to retain
+            df_parsed = outDFSubset[['SNPL_Data_ID', field]].copy()
+
+            # Split the 'Field' on the ',' delimiter
+            df_parsed[field] = df_parsed[field].str.split(',')
+            # Parse the input Field to get 1 record per delimiter via explode
+            df_parsedExploded = df_parsed.explode(field)
+
+            # Remove the parseExploded records that are nan
+            df_parsedExplodedNoNA = df_parsedExploded.dropna(subset=[field])
+
+            # Join on the 'Field' to the Behavior lookup table, left join so can check if any missing lookups
+            df_parsedExplodedwLk = pd.merge(df_parsedExplodedNoNA, outDFBehavior, left_on=field, right_on='Behavior',
+                                            how='left', indicator=True)
+
+            # Check if any undefined lookup
+            # If '' is null then these are undefined contacts
+            dfBehaviorNull = df_parsedExplodedwLk[df_parsedExplodedwLk['_merge'] != 'both']
+            numRec = dfBehaviorNull.shape[0]
+            if numRec >= 1:
+                logMsg = f'WARNING there are {numRec} records without a defined tlu_Behavior - Behavior value.'
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+
+                outPath = f'{etlInstance.outDir}\RecordsNoDefinedBehavior_{field}.csv'
+                if os.path.exists(outPath):
+                    os.remove(outPath)
+
+                dfObserversNull.to_csv(outPath, index=True)
+
+                logMsg = (f'Exporting Records without a defined Behavior lookup see - {outPath} \n'
+                          f'Exiting ETL_SNPLPORE.py - process_Behaviors with out full completion.')
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+                exit()
 
 
+            # Subset to only the 'SNPL_Data_ID', 'BehaviorCategory', and 'Behavior' fields and rename as needed
+            outDFBehavior = df_parsedExplodedwLk[['SNPL_Data_ID_x', 'BehaviorCategory', 'Behavior']].rename(
+                columns={'SNPL_Data_ID_x': 'SNPL_Data_ID', 'BehaviorCategory': 'BehaviorClass'})
 
+        # STOPPED HERE 8/21/2024
+        # Process where 'Other Behavior' = Other - reference how this was done for Observers.
+
+        # Merge the 'outDFBehavior' and 'outDFOther' data frames
+        outDFBehavior_wOther
+
+        # Append to tbl_SNPL_Behaviors
+        insertQuery = (f'INSERT INTO tbl_SNPL_Behaviors (SNPL_Data_ID, BehaviorClass, Behavior) VALUES (?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, outDFBehavior_wOther, "tbl_SNPL_Behaviors", insertQuery,
+                                        dmInstance)
 
 
         logMsg = f"Success process_Behaviors - ETL_SNPLPORE.py"
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
-        return dfObserversOtherwLK
+        return outDFBehvior_wOther
 
     except Exception as e:
 
