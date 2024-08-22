@@ -65,10 +65,6 @@ class generalArcGIS:
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
             # Path to Unzipped files
-
-            # #Temporary outName variable
-            # outName = "SNPL2024v1"
-
             fullPathZipped = f"{etlInstance.outDir}\\{outName}"
             # Import Extracted Files to Dataframes
             outDFDic = dm.generalDMClass.importFilesToDF(inDir=fullPathZipped)
