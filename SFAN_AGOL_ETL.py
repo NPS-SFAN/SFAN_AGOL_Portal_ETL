@@ -10,7 +10,7 @@ credentials to connect to AGOL/Portal thus not needing a OAuth 2.0 token with su
 
 Note: When behind the NPS firewall at the office I seemingly have to use OAuth authentication because when using the
 ArcGISPro credentials with the native ArcGISPro python environment I'm not able to retain my permission (i.e. not able
-to download Feature Layers I own).   However when VPN connected at home the ArcGISPro credentials work fine.
+to download Feature Layers I own).   Conversely, when VPN connected at home the ArcGISPro credentials work fine.
 
 Output:
 
