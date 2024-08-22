@@ -274,10 +274,11 @@ class etl_SNPLPORE:
     def process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey):
 
         """
-        ETL routine for the 'SNPL Observation' form - table 'SNPL_Observations'.
-        The major of information on this form is pushed to the following tables:
-        tbl_SNPL_Observations
-        xxxx
+        ETL routine for the 'SNPL Observation' form data is pushed to the tbl_SNPL_Observations, tbl_Nest_Master, and
+        tbl_SNPL_Behaviors.  A minimal record is added to the 'tbl_Nest_Master' table which is necessary due to the
+        dependice of the 'Nest_ID' field having a defined record in the ''tbl_Nest_Master' table.  Starting in field
+        season 2024 specific SNPL Behaviors are being collected (previously went to a notes field) to the
+        'tbl_SNPL_Behaviors' table.
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
@@ -405,9 +406,8 @@ class etl_SNPLPORE:
     def process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs):
 
         """
-        ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_SNPL_Banded'.
-        The major of information on this form is pushed to the following tables:
-        tbl_SNPL_Banded
+        ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_SNPL_Banded' and 'tbl_Check_BandData'
+
 
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
@@ -420,8 +420,36 @@ class etl_SNPLPORE:
         """
 
         try:
-            # Pass Output Data Frame
-            outDFBands = []
+
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'Band' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Specify other.', 'Right Leg',
+                                'Specify other..1', 'SNPL Sex', 'SNPL Age', 'Band Notes', 'Chick Banding?', 'Chick % Dryness',
+                                'Egg Tooth Presence', 'Yolk Sac Presence', 'USGS Band Number', 'SNPL Chick Notes']].rename(
+                columns={'ParentGlobalID': 'SNPL_Data_ID',
+                         'GlobalID': 'SNPL_Band_ID',
+                         'Left Leg': 'Left_Leg',
+                         'Specify other.': 'Specify_Other_Left',
+                         'Right Leg': 'Right_Leg',
+                         'Specify other..1': 'Specify_Other_Right',
+                         'SNPL Sex': 'SNPL_Sex',
+                         'SNPL Age': 'SNPL_Age',
+                         'Band Notes': 'Band_Notes',
+                         'Chick Banding?': 'Chick_Banding',
+                         'Chick % Dryness': 'PctDryness',
+                         'Egg Tooth Presence': 'EggToothPresence',
+                         'Yolk Sac Presence': 'YolkSacPresence',
+                         'USGS Band Number': 'USGSBandNumber'
+                         })
+
+
+
 
             logMsg = f"Success ETL_SNPLPORE.py - process_Bands."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
