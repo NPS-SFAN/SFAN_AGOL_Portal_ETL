@@ -69,11 +69,6 @@ class etl_SNPLPORE:
             ######
             outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
-
-
-            # Pass Variable Success
-            outETL = 'Success'
-
             logMsg = f"Success ETL_SNPLPORE.py - process_ETLSNPLPORE."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
@@ -369,7 +364,7 @@ class etl_SNPLPORE:
             # Add Coordinate Related Fields - Coord_Units, Coord_System, Datum
             fieldLen = outDFObsOnly.shape[1]
             # Insert 'Coord_Units' = m
-            outDFObsOnly.insert(fieldLen, "Coord_Units", "m")
+            outDFObsOnly.insert(fieldLen, "Coord_Units", "degree")
             # Insert 'Coord_System' = GCS
             outDFObsOnly.insert(fieldLen + 1, "Coord_System", "GCS")
             # Insert 'Datum' = WGS84
@@ -388,22 +383,15 @@ class etl_SNPLPORE:
 
             ############################
             # Process Behaviors Data going to 'tbl_SNPL_Behaviors'.  Will need to read in lookup tables tlu_Behavior and
-            # tlu_BehaviorCategory, Parse out by 'Terriotry, Nest and Chick Behavoir Fields, Must handle other field
+            # tlu_BehaviorCategory, Parse out by Territory, Nest and Chick Behavior Fields, If value in specify other
+            # this is being pushed to the 'tbl_SNPL_Behaviors' - 'Note' field.
             ############################
 
             outDFBehavior = process_Behaviors(etlInstance, dmInstance, outDFSubset)
 
-
-
-
-
             logMsg = f"Success ETL_SNPLPORE.py - process_Observations."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
-
-
-
-
 
             return outDFObs
 
@@ -706,17 +694,17 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
         # Create the blank dataframe to be populated
         data = {
             'SNPL_Data_ID': ['Test'],
-            'BehaviorClass': ['Test'],  # Example behavior classes
-            'Behavior': ['Test']  # Example behaviors
-        }
+            'BehaviorClass': ['Test'],
+            'Behavior': ['Test'],
+            'Notes': ['Test']}
 
         outDFBehavior = pd.DataFrame(data)
+        # Remove the setup record
         outDFBehavior = outDFBehavior[outDFBehavior['SNPL_Data_ID'] != 'Test']
 
         # Read in lookup 'tlu_Behavior'
         inQuery = f"Select * FROM tlu_Behavior;"
-        outDFBehavior = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
-
+        outDFBehaviorLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
         # Iterate through the Fields
         for field in fieldsToProcess:
@@ -731,12 +719,15 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
             # Remove the parseExploded records that are nan
             df_parsedExplodedNoNA = df_parsedExploded.dropna(subset=[field])
 
+            # If field = 'Other Behavior' also need to remove the 'other' records. The 'other' records are strings that
+            # are added to the 'specify other.' field.  These 'specify other.' entries will be handled separately below.
+            if field == 'Other Behavior':
+                df_parsedExplodedNoNA = df_parsedExplodedNoNA[df_parsedExplodedNoNA[field] != 'other']
             # Join on the 'Field' to the Behavior lookup table, left join so can check if any missing lookups
-            df_parsedExplodedwLk = pd.merge(df_parsedExplodedNoNA, outDFBehavior, left_on=field, right_on='Behavior',
+            df_parsedExplodedwLk = pd.merge(df_parsedExplodedNoNA, outDFBehaviorLU, left_on=field, right_on='Behavior',
                                             how='left', indicator=True)
 
             # Check if any undefined lookup
-            # If '' is null then these are undefined contacts
             dfBehaviorNull = df_parsedExplodedwLk[df_parsedExplodedwLk['_merge'] != 'both']
             numRec = dfBehaviorNull.shape[0]
             if numRec >= 1:
@@ -744,11 +735,11 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.warning(logMsg)
 
-                outPath = f'{etlInstance.outDir}\RecordsNoDefinedBehavior_{field}.csv'
+                outPath = f'{etlInstance.outDir}\RecordsNotDefinedBehavior_{field}.csv'
                 if os.path.exists(outPath):
                     os.remove(outPath)
 
-                dfObserversNull.to_csv(outPath, index=True)
+                dfBehaviorNull.to_csv(outPath, index=True)
 
                 logMsg = (f'Exporting Records without a defined Behavior lookup see - {outPath} \n'
                           f'Exiting ETL_SNPLPORE.py - process_Behaviors with out full completion.')
@@ -756,24 +747,52 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
                 logging.warning(logMsg)
                 exit()
 
-
             # Subset to only the 'SNPL_Data_ID', 'BehaviorCategory', and 'Behavior' fields and rename as needed
-            outDFBehavior = df_parsedExplodedwLk[['SNPL_Data_ID_x', 'BehaviorCategory', 'Behavior']].rename(
-                columns={'SNPL_Data_ID_x': 'SNPL_Data_ID', 'BehaviorCategory': 'BehaviorClass'})
+            outDFBehaviorLoop = df_parsedExplodedwLk[['SNPL_Data_ID', 'BehaviorCategory', 'Behavior']].rename(
+                columns={'BehaviorCategory': 'BehaviorClass'})
 
-        # STOPPED HERE 8/21/2024
-        # Process where 'Other Behavior' = Other - reference how this was done for Observers.
+            # Append the records to the 'outDFBehavior' dataframe
+            outDFBehavior = pd.concat([outDFBehavior, outDFBehaviorLoop], ignore_index=True)
 
-        # Merge the 'outDFBehavior' and 'outDFOther' data frames
-        outDFBehavior_wOther
+        ##################################
+        # Process the 'Other Behavior' field.  Will define as 'Behavior Category' = Territory, and Behavior = O-ON.
+        # Will push the notes in 'Specify Other.' field to the 'tbl_SNPL_Beaviors' - 'Notes' field.
+
+        inDFOther = outDFSubset[['SNPL_Data_ID', 'Other Behavior', 'Specify other.']]
+
+        inDFOther = inDFOther[inDFOther['Other Behavior'] == 'other']
+
+        # Remove and records where 'Specify Other.' field is null.
+        inDFOtherNotNull = inDFOther[inDFOther['Specify other.'].notna()]
+
+        # Subset to the desired fields
+        outDFOtherAppend = inDFOtherNotNull[['SNPL_Data_ID', 'Specify other.']].rename(
+            columns={'Specify other.': 'Notes'})
+
+        # Add the BehaviorCategory field setting to default 'Other'
+        outDFOtherAppend.insert(1, 'BehaviorClass', 'Other')
+
+        # Add the Behavior field setting to default 'O-ON' which is defined as: Other Behaviors see Notes field in
+        # tbl_SNPL_Behaviors
+        outDFOtherAppend.insert(2, 'Behavior', 'O-ON')
+
+        #################################################################
+        # Append the 'outDFOtherAppend' to the 'outDFBehavior' data frame
+        #################################################################
+        outDFBehavior_wOther = pd.concat([outDFBehavior, outDFOtherAppend])
+
+        # Remove nan values from the 'Notes' field
+        cols_to_update = ["Notes"]
+        for col in cols_to_update:
+            outDFBehavior_wOther[col] = dm.generalDMClass.nan_to_none(outDFBehavior_wOther[col])
 
         # Append to tbl_SNPL_Behaviors
-        insertQuery = (f'INSERT INTO tbl_SNPL_Behaviors (SNPL_Data_ID, BehaviorClass, Behavior) VALUES (?, ?, ?)')
+        insertQuery = (f'INSERT INTO tbl_SNPL_Behaviors (SNPL_Data_ID, BehaviorClass, Behavior, Notes)'
+                       f' VALUES (?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, outDFBehavior_wOther, "tbl_SNPL_Behaviors", insertQuery,
                                         dmInstance)
-
 
         logMsg = f"Success process_Behaviors - ETL_SNPLPORE.py"
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
