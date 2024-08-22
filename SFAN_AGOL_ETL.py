@@ -8,6 +8,10 @@ Workflow can be accomplished connecting to AGOL/Portal via an OAuth 2.0. Convers
 can connect via the 'Pro' python environment installed on your computer, which will use your windows/active directory
 credentials to connect to AGOL/Portal thus not needing a OAuth 2.0 token with subsequent workflow.
 
+Note: When behind the NPS firewall at the office I seemingly have to use OAuth authentication because when using the
+ArcGISPro credentials with the native ArcGISPro python environment I'm not able to retain my permission (i.e. not able
+to download Feature Layers I own).   However when VPN connected at home the ArcGISPro credentials work fine.
+
 Output:
 
 Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
@@ -37,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Protocol Being Processes
 protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240815 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240822 - Copy.accdb'
 
 # Year Being Processed
 inYear = 2023
@@ -51,7 +55,7 @@ layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
-credentials = 'ArcGISPro'    # ('OAuth'|'ArcGISPro')
+credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id
 pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
 #################################
