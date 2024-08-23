@@ -60,7 +60,7 @@ class etl_SNPLPORE:
             outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######
-            # Process Bands Sub Form
+            # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
             ######
             outDFBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
 
@@ -445,7 +445,7 @@ class etl_SNPLPORE:
                          'Chick % Dryness': 'PctDryness',
                          'Egg Tooth Presence': 'EggToothPresence',
                          'Yolk Sac Presence': 'YolkSacPresence',
-                         'USGS Band Number': 'USGSBandNumber'
+                         'USGS Band Number': 'USFWSBand'
                          })
 
             # Create the 'tbl_SNPL_Banded' subset
@@ -517,18 +517,99 @@ class etl_SNPLPORE:
 
 
             ###########################
-            ## Proces - Chick Band Data -
+            ## Process - Chick Band Data -
             ###########################
 
-
-
+            outDFChickBands = etl_SNPLPORE.process_ChickBands(outDFSubset, etlInstance, dmInstance, outDFObs)
 
             logMsg = f"Success processing 'ETL_SNPLPORE' - 'process_Bands'"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
 
-            return outDFBands
+            return outDFBands, outDFChickBands
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Bands: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+    def process_ChickBands(outDFSubset, etlInstance, dmInstance, outDFObs):
+
+        """
+        ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_ChickBandData'.
+
+        :param outDFSubset - Processed Bands Dataframe from 'process_Bands' method
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param outDFObs: Data frame output from the process_Observations method.
+
+        :return:outDFChickBands: Data Frame with the exported/imported data
+        """
+
+        try:
+
+            ###########################
+            ## Proces - Chick Band Data -
+            ###########################
+
+            # Create the 'tbl_SNPL_Banded' subset
+            outDFChick = outDFSubset[['SNPL_Data_ID', 'Chick_Banding', 'PctDryness', 'EggToothPresence',
+                                      'YolkSacPresence', 'USFWSBand']]
+
+            # Retain only records where 'Chick_Banding' == 'Yes', these are records with chick band information
+            outDFChickOnly = outDFChick[outDFChick['Chick_Banding'] == 'Yes']
+
+            # Drop field
+            outDFChickOnly = outDFChickOnly.drop(columns= ['Chick_Banding'])
+
+            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
+            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
+            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
+            # none values. A real PITA None and Numeric is.
+            cols_to_update = ['SNPL_Data_ID', 'Chick_Banding', 'PctDryness', 'EggToothPresence', 'YolkSacPresence',
+                                      'USFWSBand']
+            for col in cols_to_update:
+                outDFChickOnly[col] = dm.generalDMClass.nan_to_none(outDFChickOnly[col])
+
+            # Push PctDrryness to Integer
+            # First added the 'None' value added above.
+            outDFChickOnly['PctDryness'] = pd.to_numeric(outDFChickOnly['PctDryness'], errors='coerce')
+            # Convert to Integer
+            outDFChickOnly['PctDryness'] = outDFChickOnly['PctDryness'].fillna(0).astype(int)
+
+            # Add Nest_ID field j
+            # outDFChickOnly.insert(0, "Nest_ID", None)
+
+
+            # Define Nest_ID via join on the outDFObs dataframe and the 'SNPL_Data_ID'
+            # Join on the 'Field' to the Behavior lookup table, left join so can check if any missing lookups
+            outDFChickOnlywNest = pd.merge(outDFChickOnly, outDFObs[['SNPL_Data_ID', 'Nest_ID']], on='SNPL_Data_ID',
+                                           how='inner')
+
+
+            # If Null set 'EggToothPresence' and 'YolkSacPresence' to No
+            outDFChickOnlywNest['EggToothPresence'] = outDFChickOnlywNest['EggToothPresence'].replace(
+                {None: 'No', np.nan: 'No'})
+            outDFChickOnlywNest['YolkSacPresence'] = outDFChickOnlywNest['YolkSacPresence'].replace(
+                {None: 'No', np.nan: 'No'})
+
+            # How do we define the 'BandCombination field?  - ASK MATT
+
+
+            # Pass query to be appended
+            insertQuery = (f'INSERT INTO tbl_Chick_BandData (SNPL_Data_ID, PctDryness,'
+                           f' EggToothPresence, YolkSacPresence, USFWSBand, Nest_ID) VALUES (?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFChickOnlywNest, "tbl_Chick_BandData", insertQuery,
+                                            dmInstance)
+            logMsg = f"Success processing records  for 'tbl_Chick_BandData'."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return outDFChickOnlywNest
 
         except Exception as e:
 
