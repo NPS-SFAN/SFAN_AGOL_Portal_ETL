@@ -406,9 +406,9 @@ class etl_SNPLPORE:
     def process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs):
 
         """
-        ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_SNPL_Banded' and 'tbl_Check_BandData'
-
-
+        ETL routine for the 'SNPL Bands Sub Form' form - table 'tbl_SNPL_Banded' and 'tbl_Check_BandData'.  In the
+        'tbl_SNPL_Banded' table value in the other fields for left and right are concatenated into the 'Left_Leg' and
+        'Right_Leg' fields.
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
@@ -428,7 +428,7 @@ class etl_SNPLPORE:
                     inDF = df
                     break
 
-            # Create initial dataframe subset
+            # Create initial dataframe subset with all the relevant Fields for Bands and Chick Bands
             outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Specify other.', 'Right Leg',
                                 'Specify other..1', 'SNPL Sex', 'SNPL Age', 'Band Notes', 'Chick Banding?', 'Chick % Dryness',
                                 'Egg Tooth Presence', 'Yolk Sac Presence', 'USGS Band Number', 'SNPL Chick Notes']].rename(
@@ -448,12 +448,85 @@ class etl_SNPLPORE:
                          'USGS Band Number': 'USGSBandNumber'
                          })
 
+            # Create the 'tbl_SNPL_Banded' subset
+            outDFBands = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Specify other.', 'Right Leg',
+                                'Specify other..1', 'SNPL Sex', 'SNPL Age', 'Band Notes']].rename(
+                columns={'ParentGlobalID': 'SNPL_Data_ID',
+                         'GlobalID': 'SNPL_Band_ID',
+                         'Left Leg': 'Left_Leg',
+                         'Specify other.': 'Specify_Other_Left',
+                         'Right Leg': 'Right_Leg',
+                         'Specify other..1': 'Specify_Other_Right',
+                         'SNPL Sex': 'SNPL_Sex',
+                         'SNPL Age': 'SNPL_Age',
+                         'Band Notes': 'Band_Notes'})
+
+            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
+            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
+            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
+            # none values. A real PITA None and Numeric is.
+            cols_to_update = ["Left_Leg", "Specify_Other_Left", "Right_Leg", "Specify_Other_Right", "SNPL_Sex",
+                              "SNPL_Age", "Band_Notes"]
+            for col in cols_to_update:
+                outDFBands[col] = dm.generalDMClass.nan_to_none(outDFBands[col])
 
 
+            # Not necessary to redefine field types already all Object.
 
-            logMsg = f"Success ETL_SNPLPORE.py - process_Bands."
+            # Additional Data Clean Up Exercises
+
+            ###################################
+            # Add the 'Specify Other Left where not null records to the 'Left_Leg' field.  Replace the 'other' value in
+            # leg field.
+            #####################################
+            # Define the Mask - only work where "Left_Leg' is not na.
+            mask = outDFBands['Specify_Other_Left'].notna()
+
+            # Replace 'other' in 'Left_Leg' with the value from 'Specify_Other_Left' where applicable
+            outDFBands.loc[mask, 'Left_Leg'] = outDFBands.loc[mask].apply(
+                lambda row: row['Left_Leg'].replace('other', row['Specify_Other_Left']) if 'other' in row[
+                    'Left_Leg'] else row['Left_Leg'], axis=1)
+
+            ###################################
+            # Add the 'Specify Other Right where not null records to the 'Right_Leg' field.  Replace the 'other' value in
+            # leg field.
+            #####################################
+            # Define the Mask - only work where "Left_Leg' is not na.
+            mask2 = outDFBands['Specify_Other_Right'].notna()
+
+            # Replace 'other' in 'Right_Leg' with the value from 'Specify_Other_Right' where applicable
+            outDFBands.loc[mask2, 'Right_Leg'] = outDFBands.loc[mask2].apply(
+                lambda row: row['Right_Leg'].replace('other', row['Specify_Other_Right']) if 'other' in row[
+                    'Right_Leg'] else row['Right_Leg'], axis=1)
+
+
+            # Drop field not being appended
+            outDFBandsAppend = outDFBands.drop(columns=['Specify_Other_Left', 'Specify_Other_Right', 'SNPL_Band_ID'])
+
+
+            # Pass query to be appended
+            insertQuery = (f'INSERT INTO tbl_SNPL_Banded (SNPL_Data_ID, Left_Leg, Right_Leg, SNPL_Sex,'
+                           f'SNPL_Age, Band_Notes) VALUES (?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFBandsAppend, "tbl_SNPL_Banded", insertQuery,
+                                            dmInstance)
+            logMsg = f"Success processing records  for 'tbl_SNPL_Banded'."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
+
+
+            ###########################
+            ## Proces - Chick Band Data -
+            ###########################
+
+
+
+
+            logMsg = f"Success processing 'ETL_SNPLPORE' - 'process_Bands'"
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
 
             return outDFBands
 
@@ -790,7 +863,7 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
 
         inDFOther = inDFOther[inDFOther['Other Behavior'] == 'other']
 
-        # Remove and records where 'Specify Other.' field is null.
+        # Remove records where 'Specify Other.' field is null.
         inDFOtherNotNull = inDFOther[inDFOther['Specify other.'].notna()]
 
         # Subset to the desired fields
