@@ -515,9 +515,8 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-
             ###########################
-            ## Process - Chick Band Data -
+            # Process - Chick Band Data -
             ###########################
 
             outDFChickBands = etl_SNPLPORE.process_ChickBands(outDFSubset, etlInstance, dmInstance, outDFObs)
@@ -551,7 +550,7 @@ class etl_SNPLPORE:
         try:
 
             ###########################
-            ## Proces - Chick Band Data -
+            # Proces - Chick Band Data
             ###########################
 
             # Create the 'tbl_SNPL_Banded' subset
@@ -582,12 +581,10 @@ class etl_SNPLPORE:
             # Add Nest_ID field j
             # outDFChickOnly.insert(0, "Nest_ID", None)
 
-
             # Define Nest_ID via join on the outDFObs dataframe and the 'SNPL_Data_ID'
             # Join on the 'Field' to the Behavior lookup table, left join so can check if any missing lookups
             outDFChickOnlywNest = pd.merge(outDFChickOnly, outDFObs[['SNPL_Data_ID', 'Nest_ID']], on='SNPL_Data_ID',
                                            how='inner')
-
 
             # If Null set 'EggToothPresence' and 'YolkSacPresence' to No
             outDFChickOnlywNest['EggToothPresence'] = outDFChickOnlywNest['EggToothPresence'].replace(
@@ -596,7 +593,6 @@ class etl_SNPLPORE:
                 {None: 'No', np.nan: 'No'})
 
             # How do we define the 'BandCombination field?  - ASK MATT
-
 
             # Pass query to be appended
             insertQuery = (f'INSERT INTO tbl_Chick_BandData (SNPL_Data_ID, PctDryness,'
@@ -613,7 +609,7 @@ class etl_SNPLPORE:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Bands: {e}'
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_ChickBands: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
@@ -635,10 +631,72 @@ class etl_SNPLPORE:
         """
 
         try:
-            # Pass Output Data Frame
-            outDFSurvey = []
 
-            logMsg = f"Success ETL_SNPLPORE.py - process_Predators."
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'Predator' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Predator Type', 'Specify other.', 'Group Size',
+                                'Bin Locations', 'Action', 'Specify other..1', 'Direction', 'Notes', 'Long',
+                                'Lat']].rename(
+                columns={'ParentGlobalID': 'Event_ID',
+                         'GlobalID': 'Predator_Data_ID',
+                         'Predator Type': 'Predator_Type_ID',
+                         'Specify other.': 'Predator_Type_Other',
+                         'Group Size': 'GroupSize',
+                         'Bin Locations': 'BinNumber',
+                         'Action': 'ACT',
+                         'Specify other..1': 'Action_Other',
+                         'Direction': 'Flight',
+                         'Notes': 'Predator_Notes',
+                         'Long': 'X_Coord',
+                         'Lat': 'Y_Coord'})
+
+            ##############################
+            # CleanUp Wrangle Predator Table
+            ##############################
+
+            # Define desired field types
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ['Event_ID', 'Predator_Data_ID', 'Predator_Type_ID', "GroupSize", "BinNumber",
+                                      "ACT", "Flight", "Predator_Notes", "X_Coord", "Y_Coord"],
+                            'Type': ["object", "object", "object", "int32", "int32", "object",
+                                     "object", "object", "float32", "float32"],
+                            'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na"]}
+
+            outDFPredator = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+
+            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
+            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
+            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
+            # none values. A real PITA None and Numeric is.
+            cols_to_update = []
+            for col in cols_to_update:
+                outDFPredator[col] = dm.generalDMClass.nan_to_none(outDFPredator[col])
+
+            # Process the Predator Type - Other
+
+            # Process the Action - Other
+
+
+
+
+
+
+
+            # Pass query to be appended
+            insertQuery = (f'INSERT INTO tbl_Predator_Survey () VALUES (?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFChickOnlywNest, "tbl_Predator_Survey", insertQuery,
+                                            dmInstance)
+            logMsg = f"Success processing records  for 'tbl_Chick_BandData'."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
@@ -646,7 +704,7 @@ class etl_SNPLPORE:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Predators: {e}'
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Bands: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
