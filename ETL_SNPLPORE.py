@@ -6,6 +6,7 @@ Methods/Functions to be used for Snowy Plover PORE ETL workflow.
 
 #Import Required Libraries
 import pandas as pd
+import numpy as np
 import glob, os, sys
 import traceback
 import ETL as ETL
@@ -73,6 +74,7 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
+            outETL = "Success ETL SNPLPORE"
             return outETL
 
         except Exception as e:
@@ -567,19 +569,16 @@ class etl_SNPLPORE:
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
-            cols_to_update = ['SNPL_Data_ID', 'Chick_Banding', 'PctDryness', 'EggToothPresence', 'YolkSacPresence',
+            cols_to_update = ['SNPL_Data_ID', 'PctDryness', 'EggToothPresence', 'YolkSacPresence',
                                       'USFWSBand']
             for col in cols_to_update:
                 outDFChickOnly[col] = dm.generalDMClass.nan_to_none(outDFChickOnly[col])
 
-            # Push PctDrryness to Integer
+            # Push PctDryness to Integer
             # First added the 'None' value added above.
             outDFChickOnly['PctDryness'] = pd.to_numeric(outDFChickOnly['PctDryness'], errors='coerce')
             # Convert to Integer
             outDFChickOnly['PctDryness'] = outDFChickOnly['PctDryness'].fillna(0).astype(int)
-
-            # Add Nest_ID field j
-            # outDFChickOnly.insert(0, "Nest_ID", None)
 
             # Define Nest_ID via join on the outDFObs dataframe and the 'SNPL_Data_ID'
             # Join on the 'Field' to the Behavior lookup table, left join so can check if any missing lookups
@@ -650,7 +649,7 @@ class etl_SNPLPORE:
                          'Group Size': 'GroupSize',
                          'Bin Locations': 'BinNumber',
                          'Action': 'ACT',
-                         'Specify other..1': 'Action_Other',
+                         'Specify other..1': 'ACT_Other',
                          'Direction': 'Flight',
                          'Notes': 'Predator_Notes',
                          'Long': 'X_Coord',
@@ -664,11 +663,12 @@ class etl_SNPLPORE:
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ['Event_ID', 'Predator_Data_ID', 'Predator_Type_ID', "GroupSize", "BinNumber",
-                                      "ACT", "Flight", "Predator_Notes", "X_Coord", "Y_Coord"],
-                            'Type': ["object", "object", "object", "int32", "int32", "object",
-                                     "object", "object", "float32", "float32"],
-                            'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na"]}
+            fieldTypeDic = {'Field': ['Event_ID', 'Predator_Data_ID', 'Predator_Type_ID', "Predator_Type_Other",
+                                      "GroupSize", "BinNumber", "ACT", "ACT_Other", "Flight", "Predator_Notes",
+                                      "X_Coord", "Y_Coord"],
+                            'Type': ["object", "object", "object", "object", "int32", "int32", "object",
+                                     "object", "object", "object", "float64", "float64"],
+                            'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na", "na", "na"]}
 
             outDFPredator = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -676,27 +676,23 @@ class etl_SNPLPORE:
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
-            cols_to_update = []
+            cols_to_update = ['Event_ID', 'Predator_Data_ID', 'Predator_Type_ID', "GroupSize", "BinNumber", "ACT",
+                              "Flight", "Predator_Notes", "X_Coord", "Y_Coord", "Predator_Type_Other", "ACT_Other"]
             for col in cols_to_update:
                 outDFPredator[col] = dm.generalDMClass.nan_to_none(outDFPredator[col])
 
-            # Process the Predator Type - Other
-
-            # Process the Action - Other
-
-
-
-
-
-
+            # Change ACT values 'other' to 'O'
+            outDFPredator['ACT'] = outDFPredator['ACT'].replace('other', 'O')
 
             # Pass query to be appended
-            insertQuery = (f'INSERT INTO tbl_Predator_Survey () VALUES (?, ?, ?, ?, ?, ?)')
+            insertQuery = (f'INSERT INTO tbl_Predator_Survey (Event_ID, Predator_Data_ID, Predator_Type_ID,'
+                           f' Predator_Type_Other, GroupSize, BinNumber, ACT, ACT_Other, Flight, Predator_Notes,'
+                           f' X_Coord, Y_Coord) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFChickOnlywNest, "tbl_Predator_Survey", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outDFPredator, "tbl_Predator_Survey", insertQuery,
                                             dmInstance)
-            logMsg = f"Success processing records  for 'tbl_Chick_BandData'."
+            logMsg = f"Success processing records for 'tbl_Predator_Survey'."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
@@ -704,7 +700,7 @@ class etl_SNPLPORE:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Bands: {e}'
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Predator: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
