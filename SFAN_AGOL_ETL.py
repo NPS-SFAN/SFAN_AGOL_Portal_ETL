@@ -34,17 +34,16 @@ import ArcGIS_API as agl
 import logging
 import log_config
 
-
 # Get the logger
 logger = logging.getLogger(__name__)
 
 # Protocol Being Processes
 protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240822 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240826 - Copy.accdb'
 
 # Year Being Processed
-inYear = 2023
+inYear = 2024
 
 #################################
 # AGOL/Portal Variables to define
