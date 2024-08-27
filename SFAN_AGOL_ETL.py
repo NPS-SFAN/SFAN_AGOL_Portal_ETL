@@ -12,6 +12,9 @@ Note: When behind the NPS firewall at the office I seemingly have to use OAuth a
 ArcGISPro credentials with the native ArcGISPro python environment I'm not able to retain my permission (i.e. not able
 to download Feature Layers I own).   Conversely, when VPN connected at home the ArcGISPro credentials work fine.
 
+As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
+
+
 Output:
 
 Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
