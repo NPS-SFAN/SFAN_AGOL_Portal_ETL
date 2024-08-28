@@ -14,7 +14,6 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
 
-
 Output:
 
 Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
@@ -41,9 +40,9 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol Being Processes
-protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids|...)
+protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids-EFish|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240826 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20240828 - Copy.accdb'
 
 # Year Being Processed
 inYear = 2024
