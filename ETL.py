@@ -5,9 +5,10 @@ Extract Transform and Load (ETL) Methods/Functions to be used for general AGOL/P
 #Import Required Dependices
 import os, sys, traceback
 import generalDM as dm
-import ETL_SNPLPORE as SNPLP
 import ArcGIS_API as agl
 import logging
+import ETL_SNPLPORE as SNPLP
+import ETL_Salmonids_Electro as SEfish
 import log_config
 
 logger = logging.getLogger(__name__)
@@ -57,12 +58,16 @@ class etlInstance:
             #Configure Logging:
             logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-            # Pull the Feature Layer for the defined  return as dataframe(s) in list variable outDFList
+            # Pull the Feature Layer for the defined return as dataframe(s) in list variable outDFList
             outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
 
             # Create the protocol specific ETL instance
             if etlInstance.protocol == 'SNPLPORE':
                 outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance)
+
+            elif etlInstance.protocol == 'Salmonids-EFish':
+                outETL = SEfish.etl_SalmonidsElectro.process_ETLElectro(outDFDic, etlInstance, dmInstance)
+
             else:
                 logMsg = f"WARNING Protocol Specific Instance - {etlInstance.protocol} - has not been defined."
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -70,14 +75,9 @@ class etlInstance:
                 traceback.print_exc(file=sys.stdout)
                 sys.exit()
 
-
-
-
-
-
         except Exception as e:
 
-            logMsg = (f'ERROR - An error occurred process_ETLRequest: {e}')
+            logMsg = f'ERROR - An error occurred process_ETLRequest: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
