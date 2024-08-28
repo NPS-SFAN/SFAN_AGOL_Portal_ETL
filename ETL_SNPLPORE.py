@@ -1,7 +1,6 @@
 """
 ETL_SNPLPORE.py
 Methods/Functions to be used for Snowy Plover PORE ETL workflow.
-
 """
 
 #Import Required Libraries
@@ -199,9 +198,9 @@ class etl_SNPLPORE:
 
             outContactsDF = processSNPLContacts(inDF, etlInstance, dmInstance)
             #Retain only the Fields of interest
-            outContactsDFAppend = outContactsDF[['Event_ID', 'Contact_ID']]
+            outContactsDFAppend = outContactsDF[['Event_ID', 'Contact_ID', 'Contact_Role']]
 
-            insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID) VALUES (?, ?)')
+            insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID, Contact_Role) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             #Append the Contacts to the xref_EventContacts table
@@ -447,7 +446,7 @@ class etl_SNPLPORE:
                          'Chick % Dryness': 'PctDryness',
                          'Egg Tooth Presence': 'EggToothPresence',
                          'Yolk Sac Presence': 'YolkSacPresence',
-                         'USGS Band Number': 'USFWSBand'
+                         'USGS Band Number': 'USGSBand'
                          })
 
             # Create the 'tbl_SNPL_Banded' subset
@@ -472,14 +471,17 @@ class etl_SNPLPORE:
             for col in cols_to_update:
                 outDFBands[col] = dm.generalDMClass.nan_to_none(outDFBands[col])
 
-
             # Not necessary to redefine field types already all Object.
 
             # Additional Data Clean Up Exercises
 
             ###################################
             # Add the 'Specify Other Left where not null records to the 'Left_Leg' field.  Replace the 'other' value in
-            # leg field.
+            # leg field.  The 'Specify other. Right' field was only used in field season 2024 version 1 of survey 123
+            # forms. The 'Left_Leg' field in the 2024 feature class is a drop down box so retaining this logic to
+            # replace the 'Other' with the band value in 'Specify_Other_Left' field.  In subsequent cleaned up
+            # feature layers with the 'Specify other' field removed in the 'SNPLBands' feature layer this section
+            # can be removed. - KRS 20240828
             #####################################
             # Define the Mask - only work where "Left_Leg' is not na.
             mask = outDFBands['Specify_Other_Left'].notna()
@@ -492,17 +494,20 @@ class etl_SNPLPORE:
             ###################################
             # Add the 'Specify Other Right where not null records to the 'Right_Leg' field.  Replace the 'other' value in
             # leg field.
+            # Other in the right leg was only used in field season 2024 version 1 of survey 123 forms
+            # DM has manually pushed all 'Specify Other Right' values to the 'Right Leg' field.
+            # Turning off this coding section - KRS 20240828
             #####################################
-            # Define the Mask - only work where "Left_Leg' is not na.
-            mask2 = outDFBands['Specify_Other_Right'].notna()
+            # # Define the Mask - only work where "Right_Leg' is not na.
+            # mask2 = outDFBands['Specify_Other_Right'].notna()
+            #
+            # # Replace 'other' in 'Right_Leg' with the value from 'Specify_Other_Right' where applicable
+            #
+            # outDFBands.loc[mask2, 'Right_Leg'] = outDFBands.loc[mask2].apply(
+            #     lambda row: row['Right_Leg'].replace('other', row['Specify_Other_Right']) if 'other' in row[
+            #         'Right_Leg'] else row['Right_Leg'], axis=1)
 
-            # Replace 'other' in 'Right_Leg' with the value from 'Specify_Other_Right' where applicable
-            outDFBands.loc[mask2, 'Right_Leg'] = outDFBands.loc[mask2].apply(
-                lambda row: row['Right_Leg'].replace('other', row['Specify_Other_Right']) if 'other' in row[
-                    'Right_Leg'] else row['Right_Leg'], axis=1)
-
-
-            # Drop field not being appended
+            # Drop fields not being appended
             outDFBandsAppend = outDFBands.drop(columns=['Specify_Other_Left', 'Specify_Other_Right', 'SNPL_Band_ID'])
 
 
@@ -557,7 +562,7 @@ class etl_SNPLPORE:
 
             # Create the 'tbl_SNPL_Banded' subset
             outDFChick = outDFSubset[['SNPL_Data_ID', 'Chick_Banding', 'PctDryness', 'EggToothPresence',
-                                      'YolkSacPresence', 'USFWSBand']]
+                                      'YolkSacPresence', 'USGSBand', 'Left_Leg', 'Right_Leg']]
 
             # Retain only records where 'Chick_Banding' == 'Yes', these are records with chick band information
             outDFChickOnly = outDFChick[outDFChick['Chick_Banding'] == 'Yes']
@@ -570,7 +575,7 @@ class etl_SNPLPORE:
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
             cols_to_update = ['SNPL_Data_ID', 'PctDryness', 'EggToothPresence', 'YolkSacPresence',
-                                      'USFWSBand']
+                                      'USGSBand']
             for col in cols_to_update:
                 outDFChickOnly[col] = dm.generalDMClass.nan_to_none(outDFChickOnly[col])
 
@@ -591,11 +596,21 @@ class etl_SNPLPORE:
             outDFChickOnlywNest['YolkSacPresence'] = outDFChickOnlywNest['YolkSacPresence'].replace(
                 {None: 'No', np.nan: 'No'})
 
-            # How do we define the 'BandCombination field?  - ASK MATT
+            # BandCombination field is the concatenated Left and Right Leg Band Fields
+            # First add the BandCombination field
+            outDFChickOnlywNest.insert(6, 'BandCombination', None)
+
+            # Concatenate Left and Right Leg
+            outDFChickOnlywNest['BandCombination'] = (outDFChickOnlywNest['Left_Leg'] + ';' +
+                                                      outDFChickOnlywNest['Right_Leg'])
+
+            # Drop Fields Left_Leg and Right_Leg
+            outDFChickOnlywNest = outDFChickOnlywNest.drop(columns=['Right_Leg', 'Left_Leg'])
 
             # Pass query to be appended
             insertQuery = (f'INSERT INTO tbl_Chick_BandData (SNPL_Data_ID, PctDryness,'
-                           f' EggToothPresence, YolkSacPresence, USFWSBand, Nest_ID) VALUES (?, ?, ?, ?, ?, ?)')
+                           f' EggToothPresence, YolkSacPresence, USGSBand, BandCombination, Nest_ID) VALUES (?, ?, ?, '
+                           f'?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFChickOnlywNest, "tbl_Chick_BandData", insertQuery,
@@ -875,6 +890,9 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
                                                              dfObserversOther, "First_Last",
                                                              "Contact_ID")
 
+        # Inssert the 'Contact_Role' field with the default 'Observer' value
+        dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
+
         # Check for Lookups not defined via an outer join.
         # If 'Contact_ID' is null then these are undefined contacts
         dfObserversNull = dfObserversOtherwLK[dfObserversOtherwLK['Contact_ID'].isna()]
@@ -1034,7 +1052,7 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
-        return outDFBehvior_wOther
+        return outDFBehavior_wOther
 
     except Exception as e:
 
