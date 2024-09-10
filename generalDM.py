@@ -707,7 +707,7 @@ class generalDMClass:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def applyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
+    def aapplyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
         """
         Define a field (i.e. dfDefineField) via a lookup table (i.e. dfLookupTable) and a join on two data frames.
 
