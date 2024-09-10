@@ -45,11 +45,27 @@ class etl_SalmonidsElectro:
 
         try:
 
-
             ######
             # Process Event/Metadata from
             ######
             outDFEvent = etl_SalmonidsElectro.process_Event(outDFDic, etlInstance, dmInstance)
+
+            ######
+            # Process  Pass/Water Quality - TO BE DEVELOPED
+            ######
+            outDFPassWQ = etl_SalmonidsElectro.process_Event(outDFEvent, etlInstance, dmInstance)
+
+            ######
+            # Process  Measurements - TO BE DEVELOPED
+            ######
+            outDFMeasurements = etl_SalmonidsElectro.process_Event(outDFEvent, outDFPassWQ, etlInstance, dmInstance)
+
+
+
+
+
+
+
 
             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -68,7 +84,7 @@ class etl_SalmonidsElectro:
     def process_Event(outDFDic, etlInstance, dmInstance):
 
         """
-        ETL routine for the parent Event Form - TO BE DEVELOPED 8/28/2024
+        ETL routine for the parent Event Form
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
@@ -81,33 +97,38 @@ class etl_SalmonidsElectro:
             #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
             inDF = None
             for key, df in outDFDic.items():
-                if 'Survey' in key:
+                if 'EFish' in key:
                     inDF = df
                     break
 
             # Create initial dataframe subset
-            outDFSubset = inDF[['GlobalID', 'Survey Location', "SurveyDate", "Time Start Survey", "Time End Survey",
-                            "CreationDate", "Creator"]].rename(
+            outDFSubset = inDF[['GlobalID', 'StreamID', "Device", "other_Device", "StartDate", "FieldSeason",
+                                "Define Observers(s)", "other_Observer", "ProjectCode", "ProjectDescription",
+                                "LocationID", "IndexReach", "IndexUnit", "BasinWideUnit", "BasinWideUnitCode",
+                                "UnitType", "UnitTypeSecondary", "CalibrationPool", "Temp_C", "DO_percent",
+                                "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
+                                "NumberOfPasses", "CreationDate"]].rename(
                 columns={'GlobalID': 'Event_ID',
-                         'SurveyDate': 'Start_Date',
-                         'Time Start Survey': 'Start_Time',
-                         'Time End Survey': 'End_Time',
-                         'CreationDate': 'Created_Date',
-                         'Creator': 'Created_By'})
+                         'Device': 'FieldDevice',
+                         'Define Observers(s)': 'Observers',
+                         'Temp_C': 'Temp',
+                         'DO_Percent': 'DO',
+                         'DO_mg_per_L': 'DO mg/l',
+                         'Conductivity_uS_per_cm': 'Conductivity',
+                         'SpecificConductance_uS_per_cm': 'Specific Conductance',
+                         'CreationDate': 'CreatedDate',
+                         'Creator': 'CreatedBy'})
 
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
             #To DateTime Field
-            outDFSubset['Start_Date'] = pd.to_datetime(outDFSubset['Start_Date'])
+            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate'])
             # Format to m/d/yyy
-            outDFSubset['Start_Date'] = outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
+            outDFSubset['StartDate'] = outDFSubset['StartDate'].dt.strftime('%m/%d/%Y')
 
-            # Insert 'Location_ID' field
-            outDFSubset.insert(1, "Location_ID", None)
-
-            # Insert 'Protocol_Name' field
-            outDFSubset.insert(2, "Protocol_Name", "PORE SNPL")
+            # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
+            outDFSubset.insert(2, "ProtocolID", 2)
 
             fieldLen = outDFSubset.shape[1]
             # Insert 'DataProcesingLevelID' = 1
@@ -121,42 +142,59 @@ class etl_SalmonidsElectro:
             # Insert 'dataProcesingLevelUser
             outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
 
-            #####################################
-            # Define Location_Id via lookup table
-            #####################################
-
-            # Read in the Lookup Table
-            inQuery = f"Select * FROM tbl_Locations';"
-
-            outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
-            # Perform the lookup to field 'Location_ID'
-            outDF_Step2 = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLookup,
-                                                                 "Loc_Name", "Location_ID",
-                                                                 outDFSubset, "Survey Location",
-                                                                 "Location_ID")
-
-            # Drop field "Survey Location
-            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location'])
-
+            # Insert 'SurveyType'
+            outDFSubset.insert(fieldLen + 3, "SurveyType", "EFISH")
 
             ############################
             # Define desired field types
             ############################
 
-
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ["Event_ID", "Location_ID", "Protocol_Name", "Start_Date", "Start_Time", "End_Time",
-                                    "Created_Date", "Created_By", "DataProcessingLevelID", "DataProcessingLevelDate",
-                                    "DataProcessingLevelUser"],
-                             'Type': ["object", "object", "object", "datetime64", "datetime64", "datetime64",
-                                    "datetime64", "object", "int64", "DataProcessingLevelDate",
-                                    "object"],
-                            'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "%H:%M", "%H:%M",
-                                    "%m/%d/%Y %I:%M:%S %p", "na", "na", "na",
-                                    "na"]}
+            fieldTypeDic = {'Field': ['EventID', 'StreamID', 'Device', 'other_Device', 'StartDate', 'FieldSeason',
+                                      'Observers', 'other_Observer', 'ProjectCode', 'ProjectDescription',
+                                      'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
+                                      'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
+                                      'DO mg/l', 'Conductivity', 'Specific Conductance',
+                                      'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
+                                      'DataProcessingLevelUser', 'SurveyType'],
+                            'Type': ["object", "int32", "object", "object", "datetime64", "object",
+                                     "object", "object", "object", "object",
+                                     "object", "object", "object", "int32", "object",
+                                     "object", "object", "object", "float32", "float32",
+                                     "float32", "float32", "float32",
+                                     "object", "datetime64", "int32", "datetime64",
+                                     "object", "object"],
+                            'DateTimeFormat': ["na", "na", "na", "na", "%m/%d/%Y", "na",
+                                               "na", "na", "na", "na",
+                                               "na", "na", "na", "na", "na",
+                                               "na", "na", "na", "na", "na",
+                                               "na", "na", "na",
+                                               "na", "%m/%d/%Y %I:%M:%S %p", "na", "%m/%d/%Y %I:%M:%S %p",
+                                               "na", "na"]}
 
-            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
+            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+
+            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
+            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
+            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
+            # none values. A real PITA None and Numeric is.
+            cols_to_update = ['EventID', 'ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType', 'ProjectDescription',
+                              'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
+                              'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
+                              'DO mg/l', 'Conductivity', 'Specific Conductance',
+                              'NumberOfPasses', 'DataProcessingLevelID', 'DataProcessingLevelUser']
+            for col in cols_to_update:
+                outDFSurvey[col] = dm.generalDMClass.nan_to_none(outDFSurvey[col])
+
+
+            outDFEvent = outDFSurvey[['EventID', 'ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType',
+                                      'ProjectDescription', 'FieldSeason', 'StartDate', 'StartTime', 'EndTime',
+                                      'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
+                                      'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
+                                      'DO mg/l', 'Conductivity', 'Specific Conductance',
+                                      'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
+                                      'DataProcessingLevelUser', 'SurveyType']]
 
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
@@ -167,6 +205,15 @@ class etl_SalmonidsElectro:
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
                                                         dmInstance)
+
+
+
+
+
+
+
+
+
 
             ##################
             # Define Observers -  table xref_EventContacts
