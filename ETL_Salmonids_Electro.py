@@ -108,11 +108,10 @@ class etl_SalmonidsElectro:
                                 "UnitType", "UnitTypeSecondary", "CalibrationPool", "Temp_C", "DO_percent",
                                 "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
                                 "NumberOfPasses", "CreationDate"]].rename(
-                columns={'GlobalID': 'Event_ID',
-                         'Device': 'FieldDevice',
+                columns={'Device': 'FieldDevice',
                          'Define Observers(s)': 'Observers',
                          'Temp_C': 'Temp',
-                         'DO_Percent': 'DO',
+                         'DO_percent': 'DO',
                          'DO_mg_per_L': 'DO mg/l',
                          'Conductivity_uS_per_cm': 'Conductivity',
                          'SpecificConductance_uS_per_cm': 'Specific Conductance',
@@ -127,8 +126,14 @@ class etl_SalmonidsElectro:
             # Format to m/d/yyy
             outDFSubset['StartDate'] = outDFSubset['StartDate'].dt.strftime('%m/%d/%Y')
 
+            # Change 'CreatedDate' to Date Time Format
+            outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
+
             # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
             outDFSubset.insert(2, "ProtocolID", 2)
+
+            # Insert 'CreatedBy' field - define to inUser
+            outDFSubset.insert(3, "CreatedBy", etlInstance.inUser)
 
             fieldLen = outDFSubset.shape[1]
             # Insert 'DataProcesingLevelID' = 1
@@ -145,27 +150,30 @@ class etl_SalmonidsElectro:
             # Insert 'SurveyType'
             outDFSubset.insert(fieldLen + 3, "SurveyType", "EFISH")
 
+            # Change 'CreatedDate' to Date Time Format
+            outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
+
             ############################
             # Define desired field types
             ############################
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ['EventID', 'StreamID', 'Device', 'other_Device', 'StartDate', 'FieldSeason',
+            fieldTypeDic = {'Field': ['StreamID', 'FieldDevice', 'other_Device', 'StartDate', 'FieldSeason',
                                       'Observers', 'other_Observer', 'ProjectCode', 'ProjectDescription',
                                       'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
                                       'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
                                       'DO mg/l', 'Conductivity', 'Specific Conductance',
                                       'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
                                       'DataProcessingLevelUser', 'SurveyType'],
-                            'Type': ["object", "int32", "object", "object", "datetime64", "object",
+                            'Type': ["int32", "object", "object", "datetime64", "object",
                                      "object", "object", "object", "object",
                                      "object", "object", "object", "int32", "object",
                                      "object", "object", "object", "float32", "float32",
                                      "float32", "float32", "float32",
                                      "object", "datetime64", "int32", "datetime64",
                                      "object", "object"],
-                            'DateTimeFormat': ["na", "na", "na", "na", "%m/%d/%Y", "na",
+                            'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "na",
                                                "na", "na", "na", "na",
                                                "na", "na", "na", "na", "na",
                                                "na", "na", "na", "na", "na",
@@ -173,41 +181,89 @@ class etl_SalmonidsElectro:
                                                "na", "%m/%d/%Y %I:%M:%S %p", "na", "%m/%d/%Y %I:%M:%S %p",
                                                "na", "na"]}
 
-            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+            outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
             # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
-            cols_to_update = ['EventID', 'ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType', 'ProjectDescription',
+            cols_to_update = ['ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType', 'ProjectDescription',
                               'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
                               'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
                               'DO mg/l', 'Conductivity', 'Specific Conductance',
                               'NumberOfPasses', 'DataProcessingLevelID', 'DataProcessingLevelUser']
             for col in cols_to_update:
-                outDFSurvey[col] = dm.generalDMClass.nan_to_none(outDFSurvey[col])
+                outDFSubset2[col] = dm.generalDMClass.nan_to_none(outDFSubset2[col])
 
+            # Define the Mask - only work where "other_Device' is not na - If not NA not relevant to process
+            mask = outDFSubset2['other_Device'].notna()
 
-            outDFEvent = outDFSurvey[['EventID', 'ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType',
-                                      'ProjectDescription', 'FieldSeason', 'StartDate', 'StartTime', 'EndTime',
-                                      'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit', 'BasinWideUnitCode',
-                                      'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
-                                      'DO mg/l', 'Conductivity', 'Specific Conductance',
-                                      'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
-                                      'DataProcessingLevelUser', 'SurveyType']]
+            # Replace 'other' in 'Device' field with the value from 'other_Device' where applicable
+            outDFSubset2.loc[mask, 'FieldDevice'] = outDFSubset2.loc[mask].apply(
+                lambda row: row['FieldDevice'].replace('other', row['other_Device']) if 'other' in row[
+                    'FieldDevice'] else row['FieldDevice'], axis=1)
+
+            outDFEvent = outDFSubset2[['ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType',
+                                      'ProjectDescription', 'FieldSeason', 'StartDate', 'FieldDevice', 'CreatedDate',
+                                      'CreatedBy', 'DataProcessingLevelID', 'DataProcessingLevelDate',
+                                      'DataProcessingLevelUser']]
+
+            # Pull the Max EventID for the pushed data in outDFEvent
+            inQuery = f"SELECT Max(tblEvents.EventID) AS MaxOfEventID FROM tblEvents;"
+            outDFMaxEventIDPrior = generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPath)
+            maxRecordPriorLU = outDFMaxEventIDPrior['MaxOfEventID'][0]
 
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tbl_Events (Event_ID, Location_ID, Protocol_Name, Start_Date, Start_Time, '
-                           f'End_Time, Created_Date, Created_By, DataProcessingLevelID, DataProcessingLevelDate, '
-                           f'DataProcessingLevelUser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            insertQuery = (f'INSERT INTO tblEvents (ProtocolID, StreamID, ProjectCode, SurveyType, '
+                           f'ProjectDescription, FieldSeason, StartDate, FieldDevice, CreatedDate, '
+                           f'CreatedBy, DataProcessingLevelID, DataProcessingLevelDate,DataProcessingLevelUser) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outDFEvent, "tblEvents", insertQuery,
                                                         dmInstance)
 
+            #Stopped HERE 9/10/2024 - KRS
+
+            # Pull the Max EventID Post Pushing of the records in outDFEvent
+            inQuery = f"SELECT Max(tblEvents.EventID) AS MaxOfEventID FROM tblEvents;"
+            outDFMaxEventIDPost = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+            # Ge the Max EventID from the Lookup
+            maxRecordPostLU = outDFMaxEventIDPost['MaxOfEventID'][0]
+
+            #Get Number of Records Pushed
+            recNumber = outDFEvent.shape[1]
+
+            # Max EventID will be outDFMaxEventIDPrior + recNumber
+            maxEventIDExpected = maxRecordPriorLU + recNumber
+
+            # QC Check - MaxEventID Prior to Append + Number of Appended Records should = Max EventID Post Append.
+            if maxEventIDExpected != maxRecordPostLU:
+                logMsg = (f'WARNING ERROR  - Expected Max EventID : {maxEventIDExpected} - is not equal to the '
+                          f'Max EventID: {maxRecordPostLU} - Post Append of dataframe  - outDFEvent - EXITING script.')
+
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.critical(logMsg, exc_info=True)
+                it()
+
+            else: # Add the EventID back to the 'outDFSubset2' and 'outDFEvent' dataframes
+                outDFEvent['EventID'] = range(maxRecordPriorLU, maxRecordPriorLU + len(outDFEvent))
+                outDFSubset2['EventID'] = range(maxRecordPriorLU, maxRecordPriorLU + len(outDFSubset2))
 
 
+            ####################################
+            # Append outDFESurvey to 'tblEfishSurveys'
+            ####################################
+            # Pass final Query to be appended
+            insertQuery = (f'INSERT INTO tblEfishSurveys (EventID, ProtocolID, StreamID, ProjectCode, SurveyType, '
+                           f'ProjectDescription, FieldSeason, StartDate, FieldDevice, CreatedDate, '
+                           f'CreatedBy, DataProcessingLevelID, DataProcessingLevelDate,DataProcessingLevelUser) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFEvent, "tblEvents", insertQuery,
+                                            etlInstance.inDBBE)
 
 
 
