@@ -191,7 +191,8 @@ class etl_SalmonidsElectro:
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
             cols_to_update = ['ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType', 'ProjectDescription',
-                              'DataProcessingLevelID', 'DataProcessingLevelUser', 'IndexReach']
+                              'DataProcessingLevelID', 'DataProcessingLevelUser', 'IndexReach', 'IndexUnit',
+                              'UnitTypeSecondary']
             for col in cols_to_update:
                 outDFSubset2[col] = dm.generalDMClass.nan_to_none(outDFSubset2[col])
 
@@ -257,7 +258,7 @@ class etl_SalmonidsElectro:
                 lambda x: True if x == 'Yes' else False)
 
 
-            # Get Fields IndexReach, IndexUnit and UnitType to None so Nan doesn't import
+
 
 
 
@@ -266,6 +267,12 @@ class etl_SalmonidsElectro:
                                                 'BasinWideUnitCode', 'UnitType', 'UnitTypeSecondary', 'CalibrationPool',
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
                                                 'NumberOfPasses']]
+
+            # Get Fields IndexReach, IndexUnit and UnitType to None so Nan doesn't import - Trying a second time
+            cols_to_update = ['IndexReach', 'IndexUnit', 'UnitTypeSecondary']
+            for col in cols_to_update:
+                outDFSurvey[col] = dm.generalDMClass.nan_to_none(outDFSurvey[col])
+
 
             # Pass final Query to be appended to tblEFishSurveys - Must have brackets around fields with spaces.
             insertQuery = (f'INSERT INTO tblEfishSurveys (EventID, LocationID, IndexReach, IndexUnit, BasinWideUnit, '
@@ -279,6 +286,8 @@ class etl_SalmonidsElectro:
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEfishSurveys", insertQuery,
                                             dmInstance)
 
+
+            # IndexReach, IndexUnit and UnitTypeSecondary change the nan to None - via query?
 
             # STOPPED HER 9/11/2024 - KRS
 
