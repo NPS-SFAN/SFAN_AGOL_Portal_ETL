@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Protocol Being Processes
 protocol = 'Salmonids-EFish'   #(SNPLPORE|Salmonids-EFish|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20240909 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20240911 - Copy.accdb'
 
 # Year Being Processed
 inYear = 2024
