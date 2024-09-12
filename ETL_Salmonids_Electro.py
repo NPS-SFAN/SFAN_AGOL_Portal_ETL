@@ -85,13 +85,15 @@ class etl_SalmonidsElectro:
 
         """
         ETL routine for the parent Event Form for Electrofishing. Processes the main parent form {SFAN_Salmonids_EFish_}
-        Data is ETL'd to tblEvents, tblEfishSurveys, tblEventObservers
+        Data is ETL'd to tblEvents, tblEfishSurveys, tblEventObservers.
+
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:outDFEvent2 - Data Frame of the import records to tblEvents.
-                outDFSurvey - Data Frame of the imported records to tblEfishSurveys
+        :return:outDFEvent2 - Dataframe of the import records to tblEvents.
+                outDFSurvey - Dataframe of the imported records to tblEfishSurveys
+                outContactsDF - Dataframe with the imported Observer/Contacts per event to tblEventObservers
         """
 
         try:
@@ -287,26 +289,27 @@ class etl_SalmonidsElectro:
 
             outContactsDF = process_SalmonidsContacts(outDFSubset2wEventID, etlInstance, dmInstance)
 
-            insertQuery = (f'INSERT INTO TBD (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
+            # Retain Needed fields
+            outContactsDF.drop(columns={'Observers'}, inplace=True)
+
+            # Insert the 'CreateDate' field
+            from datetime import datetime
+            dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+            outContactsDF.insert(2, 'CreatedDate', dateNow)
+
+            insertQuery = (f'INSERT INTO tblEventObservers (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             #Append the Contacts to the xref_EventContacts table
             dm.generalDMClass.appendDataSet(cnxn, outContactsDF, "tblEventObservers", insertQuery,
                                             dmInstance)
 
-
-
-
-
-
-
-
             logMsg = f"Success ETL Event/Survey Form ERL_Salmonids_Electro.py - process_Event"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
-            return outDFEvent2, outDFSurvey
+            return outDFEvent2, outDFSurvey, outContactsDF
 
         except Exception as e:
 
@@ -330,7 +333,8 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
     try:
 
-        inDFContacts = inDF[['EventID', 'Observers']]
+        inDFContacts = inDF[['EventID', 'Observers', 'other_Observer']]
+        inDFContacts.rename(columns={'other_Observer': 'Other'}, inplace=True)
 
         #####################################
         # Parse the 'Observers' field on ','
@@ -342,7 +346,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Drop field 'other'
         inDFObserversParsed3 = inDFObserversParsed2.drop(['Other'], axis=1)
         # Reset Index
-        inDFObserversParsed3.reset_index(drop=True)
+        inDFObserversParsed3.reset_index(drop=True, inplace=True)
 
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
@@ -354,9 +358,9 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         inQuery = f"SELECT * FROM tluObservers"
         outDFtluObservers = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Define the EventID via a join Global ID via lookup approach
+        # Define the OBSCODE via a join lookup approach
         inDFObserversDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFtluObservers,
-                                                             "OBSCODE", "EventID",
+                                                             "OBSCODE", "OBSCODE",
                                                              inDFObserversParsed3, "Observers",
                                                              "OBSCODE")
 
@@ -364,79 +368,111 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Parse the 'Other' field on ','
         # Retain only the records where Observers contains 'other'
         inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('other')]
-        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
-        inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
 
-        # Reset Index
-        inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+        # Assign to String
+        inObsOther['Other'] = inObsOther['Other'].astype(str)
 
-        # Trim leading white spaces in the 'Observers' field
-        inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+        # Retain only records with Other to be defined
+        inDFOthersSubset = inObsOther[inObsOther['Other'] != 'nan']
 
-        # Define First and Last Name Fields
-        inDFOthersParsed3.insert(2, "Last_Name", None)
-        inDFOthersParsed3.insert(3, "First_Name", None)
+        numberRecords = inDFOthersSubset.shape[0]
 
-        # Add Field checking if '_' is in field Observers
-        inDFOthersParsed3['Underscore'] = inDFOthersParsed3['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
+        # Proceed on Processing
+        if numberRecords > 0:
+            inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
+            inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
+
+            # Reset Index
+            inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+
+            # Trim leading white spaces in the 'Observers' field
+            inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+
+            # Define First and Last Name Fields
+            inDFOthersParsed3.insert(2, "Last_Name", None)
+            inDFOthersParsed3.insert(3, "First_Name", None)
+
+
+            # Insert 'OBSCODE to be defined
+            inDFOthersParsed3.insert(1, "OBSCODE", None)
+
+            # Retain only records that aren't null
+            inDFOthersParsed3_subset = inDFOthersParsed3[inDFOthersParsed3['Observers'].notna()]
+
+            # Add Field checking if '_' is in field Observers
+            inDFOthersParsed3_subset['Underscore'] = inDFOthersParsed3_subset['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
+
+
+            ###############################
+            # Define the 'First_Name' field
+            # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
+            inDFOthersParsed3_subset['First_Name'] = inDFOthersParsed3_subset.apply(
+                lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
+            # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
+            inDFOthersParsed3_subset['First_Name'] = inDFOthersParsed3_subset.apply(
+                lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
+
+            ###############################
+            # Define the 'Last_Name' field
+            # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
+            inDFOthersParsed3_subset['Last_Name'] = inDFOthersParsed3_subset.apply(
+                lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
+            # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
+            inDFOthersParsed3_subset['Last_Name'] = inDFOthersParsed3_subset.apply(
+                lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
+
+            # Define the OBSCODE via a join on the First and Last Name fields in dataframes 'inDFOthersParsed3_subset' and
+            # outDFtluObservers
+
+            mergedOtherDf = pd.merge(inDFOthersParsed3_subset, outDFtluObservers, left_on=['Last_Name', 'First_Name'],
+                right_on=['LASTNAME', 'FIRSTNAME'], how='left', suffixes=('_x', ''))
+
+
+            # Subset to the needed fields
+            mergedOtherDf2 = mergedOtherDf[['EventID', 'Observers', 'OBSCODE']]
+
+            # Append 'mergedOtherDf2 with the  'inDFObserversDefined' dataframe
+            inDFObserverDefinedAll = pd.concat([inDFObserversDefined, mergedOtherDf2],  axis=0)
+
+            inDFObserverDefinedAll.reset_index()
+        # Not Processing Other field
+        else:
+            inDFObserverDefinedAll = inDFObserversDefined
+
         ###############################
-        # Define the 'First_Name' field
-        # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
-        inDFOthersParsed3['First_Name'] = inDFOthersParsed3.apply(
-            lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
-        # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
-        inDFOthersParsed3['First_Name'] = inDFOthersParsed3.apply(
-            lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
-
+        # Check for Lookups not defined
         ###############################
-        # Define the 'Last_Name' field
-        # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
-        inDFOthersParsed3['Last_Name'] = inDFOthersParsed3.apply(
-            lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
-        # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
-        inDFOthersParsed3['Last_Name'] = inDFOthersParsed3.apply(
-            lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
 
-        # Add the Contact_ID field to be populated
-        fieldLen = dfObserversOther.shape[1]
-        # Insert 'DataProcesingLevelID' = 1
-        dfObserversOther.insert(fieldLen-1, "OBSCODE", None)
-
-       # Define the OBSCODE
-
-
-
-
-        # Check for Lookups not defined via an outer join.
-        # If 'Contact_ID' is null then these are undefined contacts
-        dfObserversNull = dfObserversOtherwLK[dfObserversOtherwLK['Contact_ID'].isna()]
+        dfObserversNull = inDFObserverDefinedAll[inDFObserverDefinedAll['OBSCODE'].isna()]
         numRec = dfObserversNull.shape[0]
         if numRec >= 1:
-            logMsg = f'WARNING there are {numRec} records without a defined tlu_Contacts Contact_ID value.'
+            # Sort on the Observers field
+            dfObserversNull_sorted = dfObserversNull.sort_values(by='Observers')
+            logMsg = f'WARNING there are {numRec} records without a defined records in the tluObservers lookup table.'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
 
-            outPath = f'{etlInstance.outDir}\RecordsNoDefinedContact.csv'
+            outPath = f'{etlInstance.outDir}\RecordsSalmonids_Electro_NoDefinedContact.csv'
             if os.path.exists(outPath):
                 os.remove(outPath)
 
-            dfObserversNull.to_csv(outPath, index=True)
+            dfObserversNull_sorted.to_csv(outPath, index=True)
 
             logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
-                      f'Exiting ETL_SNPLPORE.py - processSNPLContacts with out full completion.')
+                      f'Exiting ETL_Salmonids_Electro.py - process_SalmonidsContacts with out full completion.')
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
             exit()
 
-        logMsg = f"Success ETL_SNPLPORE.py - processSNPLContacts."
+        logMsg = f"Success ETL_Salmonids_Electro.py - processSalmonidsContacts."
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
-        return dfObserversOtherwLK
+        return inDFObserverDefinedAll
 
     except Exception as e:
 
-        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        logMsg = f'WARNING ERROR  - ETL_Salmonids_Electro.py - processSalmonidsContacts: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
