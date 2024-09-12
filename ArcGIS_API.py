@@ -62,8 +62,8 @@ class generalArcGIS:
             # outzipPath = outFeatureLayer[0]
             # outName = outFeatureLayer[1]
 
-            outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024\SFAN_Salmonids_EFish_2024v1.2_20240911-133512.zip'
-            outName = 'SFAN_Salmonids_EFish_2024v1.2_20240911-133512'
+            outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024\SFAN_Salmonids_EFish_2024v1.2_20240911-132502.zip'
+            outName = 'SFAN_Salmonids_EFish_2024v1.2_20240911-132502'
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
             # Path to Unzipped files
