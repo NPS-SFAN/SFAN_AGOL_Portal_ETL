@@ -48,7 +48,7 @@ class etl_SalmonidsElectro:
             ######
             # Process Event/Metadata from
             ######
-            outDFEvent = etl_SalmonidsElectro.process_Event(outDFDic, etlInstance, dmInstance)
+            outDFEvent = etl_SalmonidsElectro.process_Event_Electrofishing(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process  Pass/Water Quality - TO BE DEVELOPED
@@ -81,20 +81,21 @@ class etl_SalmonidsElectro:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def process_Event(outDFDic, etlInstance, dmInstance):
+    def process_Event_Electrofishing(outDFDic, etlInstance, dmInstance):
 
         """
-        ETL routine for the parent Event Form
-
+        ETL routine for the parent Event Form for Electrofishing. Processes the main parent form {SFAN_Salmonids_EFish_}
+        Data is ETL'd to tblEvents, tblEfishSurveys, tblEventObservers
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:outDFSurvey: Data Frame of the exported form will be used in subsequent table ETL.
+        :return:outDFEvent2 - Data Frame of the import records to tblEvents.
+                outDFSurvey - Data Frame of the imported records to tblEfishSurveys
         """
 
         try:
-            #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            #Export the Parent Event/Survey Dataframe from Dictionary List - Wild Card in Key is *EFish*
             inDF = None
             for key, df in outDFDic.items():
                 if 'EFish' in key:
@@ -281,10 +282,10 @@ class etl_SalmonidsElectro:
             ##################
             # Define tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
-            # Lookup table for contacts is tlu_Observer
+            # Lookup table for contacts is tluObserver
             ##################
 
-            outContactsDF = process_SalmonidsContacts(inDF, etlInstance, dmInstance)
+            outContactsDF = process_SalmonidsContacts(outDFSubset2wEventID, etlInstance, dmInstance)
 
             insertQuery = (f'INSERT INTO TBD (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
 
@@ -294,7 +295,7 @@ class etl_SalmonidsElectro:
                                             dmInstance)
 
 
-            
+
 
 
 
@@ -329,10 +330,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
     try:
 
-        inDFContacts = inDF[['GlobalID', 'Define Observer(s)', 'Specify other.']].rename(
-                    columns={'GlobalID': 'Event_ID',
-                             'Define Observer(s)': 'Observers',
-                             'Specify other.': 'Other'})
+        inDFContacts = inDF[['EventID', 'Observers']]
 
         #####################################
         # Parse the 'Observers' field on ','
@@ -349,6 +347,18 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
 
+        # Define OBSCODE
+        inDFObserversParsed3.insert(2, 'OBSCODE', None)
+
+        # Import the tluObservers tables
+        inQuery = f"SELECT * FROM tluObservers"
+        outDFtluObservers = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Define the EventID via a join Global ID via lookup approach
+        inDFObserversDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFtluObservers,
+                                                             "OBSCODE", "EventID",
+                                                             inDFObserversParsed3, "Observers",
+                                                             "OBSCODE")
 
         ##################################
         # Parse the 'Other' field on ','
@@ -363,56 +373,39 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
 
-        ##################################
-        # Combine both parsed dataframes for fields Observers and Others
-        dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
-
         # Define First and Last Name Fields
-        dfObserversOther.insert(2, "Last_Name", None)
-        dfObserversOther.insert(3, "First_Name", None)
+        inDFOthersParsed3.insert(2, "Last_Name", None)
+        inDFOthersParsed3.insert(3, "First_Name", None)
 
         # Add Field checking if '_' is in field Observers
-        dfObserversOther['Underscore'] = dfObserversOther['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
+        inDFOthersParsed3['Underscore'] = inDFOthersParsed3['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
         ###############################
         # Define the 'First_Name' field
         # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
-        dfObserversOther['First_Name'] = dfObserversOther.apply(
+        inDFOthersParsed3['First_Name'] = inDFOthersParsed3.apply(
             lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
         # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
-        dfObserversOther['First_Name'] = dfObserversOther.apply(
+        inDFOthersParsed3['First_Name'] = inDFOthersParsed3.apply(
             lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
 
         ###############################
         # Define the 'Last_Name' field
         # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
-        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+        inDFOthersParsed3['Last_Name'] = inDFOthersParsed3.apply(
             lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
         # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
-        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+        inDFOthersParsed3['Last_Name'] = inDFOthersParsed3.apply(
             lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
-
-        # Create a 'First_Last' name which will be the index on which the lookup will be performs
-        dfObserversOther['First_Last'] = dfObserversOther['First_Name'] + '_' + dfObserversOther['Last_Name']
 
         # Add the Contact_ID field to be populated
         fieldLen = dfObserversOther.shape[1]
         # Insert 'DataProcesingLevelID' = 1
-        dfObserversOther.insert(fieldLen-1, "Contact_ID", None)
+        dfObserversOther.insert(fieldLen-1, "OBSCODE", None)
 
-        #######################################
-        # Read in 'Lookup Table - tlu Contacts'
-        inQuery = f"SELECT tlu_Contacts.Contact_ID, [First_Name] & '_' & [Last_Name] AS First_Last FROM tlu_Contacts;"
+       # Define the OBSCODE
 
-        outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Apply the Lookup Code on the Two Data Frames
-        dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
-                                                             "First_Last", "Contact_ID",
-                                                             dfObserversOther, "First_Last",
-                                                             "Contact_ID")
 
-        # Inssert the 'Contact_Role' field with the default 'Observer' value
-        dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
 
         # Check for Lookups not defined via an outer join.
         # If 'Contact_ID' is null then these are undefined contacts
