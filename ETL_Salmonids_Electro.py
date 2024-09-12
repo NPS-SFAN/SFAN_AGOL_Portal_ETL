@@ -107,16 +107,24 @@ class etl_SalmonidsElectro:
                                 "LocationID", "IndexReach", "IndexUnit", "BasinWideUnit", "BasinWideUnitCode",
                                 "UnitType", "UnitTypeSecondary", "CalibrationPool", "Temp_C", "DO_percent",
                                 "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
-                                "NumberOfPasses", "CreationDate"]].rename(
-                columns={'Device': 'FieldDevice',
-                         'Define Observers(s)': 'Observers',
-                         'Temp_C': 'Temp',
-                         'DO_percent': 'DO',
-                         'DO_mg_per_L': 'DO mg/l',
-                         'Conductivity_uS_per_cm': 'Conductivity',
-                         'SpecificConductance_uS_per_cm': 'Specific Conductance',
-                         'CreationDate': 'CreatedDate',
-                         'Creator': 'CreatedBy'})
+                                "NumberOfPasses", "CreationDate", "Creator"]]
+
+            # Rename might be best to not include in the subset operation
+            outDFSubset.rename(columns={'Device': 'FieldDevice',
+                               'Define Observers(s)': 'Observers',
+                               'Temp_C': 'Temp',
+                               'DO_percent': 'DO',
+                               'DO_mg_per_L': 'DO mg/l',
+                               'Conductivity_uS_per_cm': 'Conductivity',
+                               'SpecificConductance_uS_per_cm': 'Specific Conductance',
+                               'CreationDate': 'CreatedDate',
+                               'Creator': 'CreatedBy'}, inplace=True)
+
+            # Address NAN values pushed to None - Do this prior to data type conversion
+            cols_to_update = ['IndexReach', 'IndexUnit',
+                              'UnitTypeSecondary']
+            for col in cols_to_update:
+                outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
 
             ##############################
             # Numerous Field CleanUp Steps
@@ -135,8 +143,8 @@ class etl_SalmonidsElectro:
             # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
             outDFSubset.insert(2, "ProtocolID", 2)
 
-            # Insert 'CreatedBy' field - define to inUser
-            outDFSubset.insert(3, "CreatedBy", etlInstance.inUser)
+            # # Insert 'CreatedBy' field - define to inUser - Use variable passed in survey
+            # outDFSubset.insert(3, "CreatedBy", etlInstance.inUser)
 
             fieldLen = outDFSubset.shape[1]
             # Insert 'DataProcesingLevelID' = 1
@@ -185,16 +193,6 @@ class etl_SalmonidsElectro:
                                                "na", "na"]}
 
             outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
-
-            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
-            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
-            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
-            # none values. A real PITA None and Numeric is.
-            cols_to_update = ['ProtocolID', 'StreamID', 'ProjectCode', 'SurveyType', 'ProjectDescription',
-                              'DataProcessingLevelID', 'DataProcessingLevelUser', 'IndexReach', 'IndexUnit',
-                              'UnitTypeSecondary']
-            for col in cols_to_update:
-                outDFSubset2[col] = dm.generalDMClass.nan_to_none(outDFSubset2[col])
 
             # Define the Mask - only work where "other_Device' is not na - If not NA not relevant to process
             mask = outDFSubset2['other_Device'].notna()
@@ -257,21 +255,13 @@ class etl_SalmonidsElectro:
             outDFSubset2wEventID['CalibrationPool'] = outDFSubset2wEventID['CalibrationPool'].apply(
                 lambda x: True if x == 'Yes' else False)
 
-
-
-
-
-
             # Define Survey DataFrame - with Subset
             outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit',
                                                 'BasinWideUnitCode', 'UnitType', 'UnitTypeSecondary', 'CalibrationPool',
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
                                                 'NumberOfPasses']]
 
-            # Get Fields IndexReach, IndexUnit and UnitType to None so Nan doesn't import - Trying a second time
-            cols_to_update = ['IndexReach', 'IndexUnit', 'UnitTypeSecondary']
-            for col in cols_to_update:
-                outDFSurvey[col] = dm.generalDMClass.nan_to_none(outDFSurvey[col])
+
 
 
             # Pass final Query to be appended to tblEFishSurveys - Must have brackets around fields with spaces.
@@ -287,84 +277,35 @@ class etl_SalmonidsElectro:
                                             dmInstance)
 
 
-            # IndexReach, IndexUnit and UnitTypeSecondary change the nan to None - via query?
-
-            # STOPPED HER 9/11/2024 - KRS
 
             ##################
-            # Define Observers -  table xref_EventContacts
+            # Define tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
-            # Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+            # Lookup table for contacts is tlu_Observer
             ##################
 
-            outContactsDF = processSNPLContacts(inDF, etlInstance, dmInstance)
-            #Retain only the Fields of interest
-            outContactsDFAppend = outContactsDF[['Event_ID', 'Contact_ID']]
+            outContactsDF = process_SalmonidsContacts(inDF, etlInstance, dmInstance)
 
-            insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID) VALUES (?, ?)')
+            insertQuery = (f'INSERT INTO TBD (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             #Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outContactsDFAppend, "xref_Event_Contacts", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outContactsDF, "tblEventObservers", insertQuery,
                                             dmInstance)
 
-            ##################
-            # Create tbl_Events_Details record - push field 'Survey Note' to 'Event_Notes', LE Violation,
-            # LE Violation Notes, Predator Stop Time (min), DeviceName
-            ###################
 
-            outDFEventDetails = inDF[['GlobalID', 'Survey Note', "LE Violation", "LE Violation Notes",
-                                "Predator Stop Time (min)", "Collection Device"]].rename(
-                columns={'GlobalID': 'Event_ID',
-                         'Survey Note': 'Event_Notes',
-                         'LE Violation': 'LE_Violation',
-                         'LE Violation Notes': 'Violation_Notes',
-                         'Predator Stop Time (min)': 'PredatorStop',
-                         'Collection Device': 'DeviceName'})
+            
 
-            # Clean Up Notes Fields
-            outDFEventDetails['Event_Notes'] = outDFEventDetails['Event_Notes'].str.replace(',', '')
-            outDFEventDetails['Violation_Notes'] = outDFEventDetails['Violation_Notes'].str.replace(',', '')
 
-            fieldTypeDic2 = {
-                'Field': ["Event_ID", "Event_Notes", "LE_Violation", "Violation_Notes", "PredatorStop", "DeviceName"],
-                'Type': ["object", "object", "object", "object", "int32", "object"],
-                'DateTimeFormat': ["na", "na", "na", "na", "na", "na"]}
 
-            # Check and Update Field types as needed
-            outDFEventDetails2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic2,
-                                                               inDF=outDFEventDetails)
 
-            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
-            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
-            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
-            # none values. A real PITA None and Numeric is.
-            cols_to_update = ["Event_Notes", "LE_Violation", "Violation_Notes", "DeviceName", "PredatorStop"]
-            for col in cols_to_update:
-                outDFEventDetails2[col] = dm.generalDMClass.nan_to_none(outDFEventDetails2[col])
 
-            ## Predator Stop Time set Pandas NaN values to 0 so plays nice with Access - Not Using - 8/15/2024
-            ##outDFEventDetails2['PredatorStop']=outDFEventDetails2['PredatorStop'].fillna(0)
-
-            # Change Check Box Field If Yes to True and No to False
-            outDFEventDetails2['LE_Violation'] = outDFEventDetails2['LE_Violation'].apply(
-                lambda x: True if x == 'Yes' else False)
-
-            #Define final query
-            insertQuery = (f'INSERT INTO tbl_Event_Details (Event_ID, Event_Notes, LE_Violation, Violation_Notes'
-                           f', PredatorStop, DeviceName) VALUES (?, ?, ?, ?, ?, ?)')
-
-            # Connect to DB
-            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            # Append misc Event Fields to the tbl_Event_Details table
-            dm.generalDMClass.appendDataSet(cnxn, outDFEventDetails2, "tbl_Event_Details", insertQuery, dmInstance)
-
-            logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
+            logMsg = f"Success ETL Event/Survey Form ERL_Salmonids_Electro.py - process_Event"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
-            return outDFEvent2
+            return outDFEvent2, outDFSurvey
 
         except Exception as e:
 
@@ -373,3 +314,136 @@ class etl_SalmonidsElectro:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
+    """
+    Define Observers for Salmonids
+    Harvest Multi-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
+    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return:
+    """
+
+    try:
+
+        inDFContacts = inDF[['GlobalID', 'Define Observer(s)', 'Specify other.']].rename(
+                    columns={'GlobalID': 'Event_ID',
+                             'Define Observer(s)': 'Observers',
+                             'Specify other.': 'Other'})
+
+        #####################################
+        # Parse the 'Observers' field on ','
+        # First remove the records where Observers == 'other'
+        inObsNotOther = inDFContacts[inDFContacts['Observers'] != 'other']
+        inDFObserversParsed = inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(',')).explode('Observers')
+        # Drop any records with 'Other' some cases have defined people and then also other
+        inDFObserversParsed2 = inDFObserversParsed[inDFObserversParsed['Observers'] != 'other']
+        # Drop field 'other'
+        inDFObserversParsed3 = inDFObserversParsed2.drop(['Other'], axis=1)
+        # Reset Index
+        inDFObserversParsed3.reset_index(drop=True)
+
+        # Trim leading white spaces in the 'Observers' field
+        inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
+
+
+        ##################################
+        # Parse the 'Other' field on ','
+        # Retain only the records where Observers contains 'other'
+        inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('other')]
+        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
+        inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
+
+        # Reset Index
+        inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+
+        # Trim leading white spaces in the 'Observers' field
+        inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+
+        ##################################
+        # Combine both parsed dataframes for fields Observers and Others
+        dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+
+        # Define First and Last Name Fields
+        dfObserversOther.insert(2, "Last_Name", None)
+        dfObserversOther.insert(3, "First_Name", None)
+
+        # Add Field checking if '_' is in field Observers
+        dfObserversOther['Underscore'] = dfObserversOther['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
+        ###############################
+        # Define the 'First_Name' field
+        # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
+        dfObserversOther['First_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
+        # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
+        dfObserversOther['First_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
+
+        ###############################
+        # Define the 'Last_Name' field
+        # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
+        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
+        # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
+        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
+
+        # Create a 'First_Last' name which will be the index on which the lookup will be performs
+        dfObserversOther['First_Last'] = dfObserversOther['First_Name'] + '_' + dfObserversOther['Last_Name']
+
+        # Add the Contact_ID field to be populated
+        fieldLen = dfObserversOther.shape[1]
+        # Insert 'DataProcesingLevelID' = 1
+        dfObserversOther.insert(fieldLen-1, "Contact_ID", None)
+
+        #######################################
+        # Read in 'Lookup Table - tlu Contacts'
+        inQuery = f"SELECT tlu_Contacts.Contact_ID, [First_Name] & '_' & [Last_Name] AS First_Last FROM tlu_Contacts;"
+
+        outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Apply the Lookup Code on the Two Data Frames
+        dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
+                                                             "First_Last", "Contact_ID",
+                                                             dfObserversOther, "First_Last",
+                                                             "Contact_ID")
+
+        # Inssert the 'Contact_Role' field with the default 'Observer' value
+        dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
+
+        # Check for Lookups not defined via an outer join.
+        # If 'Contact_ID' is null then these are undefined contacts
+        dfObserversNull = dfObserversOtherwLK[dfObserversOtherwLK['Contact_ID'].isna()]
+        numRec = dfObserversNull.shape[0]
+        if numRec >= 1:
+            logMsg = f'WARNING there are {numRec} records without a defined tlu_Contacts Contact_ID value.'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.warning(logMsg)
+
+            outPath = f'{etlInstance.outDir}\RecordsNoDefinedContact.csv'
+            if os.path.exists(outPath):
+                os.remove(outPath)
+
+            dfObserversNull.to_csv(outPath, index=True)
+
+            logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
+                      f'Exiting ETL_SNPLPORE.py - processSNPLContacts with out full completion.')
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.warning(logMsg)
+            exit()
+
+        logMsg = f"Success ETL_SNPLPORE.py - processSNPLContacts."
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return dfObserversOtherwLK
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
