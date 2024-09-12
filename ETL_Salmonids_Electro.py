@@ -46,17 +46,18 @@ class etl_SalmonidsElectro:
         try:
 
             ######
-            # Process Event/Metadata from
+            # ETL Event/Survey/Observers
             ######
-            outDFEvent = etl_SalmonidsElectro.process_Event_Electrofishing(outDFDic, etlInstance, dmInstance)
+            outDFEventSurvey = etl_SalmonidsElectro.process_Event_Electrofishing(outDFDic, etlInstance, dmInstance)
+            outDFEvent= outDFEventSurvey[1]
 
             ######
-            # Process  Pass/Water Quality - TO BE DEVELOPED
+            # ETL Pass
             ######
-            outDFPassWQ = etl_SalmonidsElectro.process_Event(outDFEvent, etlInstance, dmInstance)
+            outDFPassWQ = etl_SalmonidsElectro.process_Pass(outDFEvent, etlInstance, dmInstance)
 
             ######
-            # Process  Measurements - TO BE DEVELOPED
+            # ETL Process  Measurements - TO BE DEVELOPED
             ######
             #outDFMeasurements = etl_SalmonidsElectro.process_Event(outDFEvent, outDFPassWQ, etlInstance, dmInstance)
 
@@ -125,7 +126,7 @@ class etl_SalmonidsElectro:
 
             # Address NAN values pushed to None - Do this prior to data type conversion
             cols_to_update = ['IndexReach', 'IndexUnit',
-                              'UnitTypeSecondary']
+                              'UnitTypeSecondary', 'ProjectDescription']
             for col in cols_to_update:
                 outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
 
