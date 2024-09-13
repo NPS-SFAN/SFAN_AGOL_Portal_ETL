@@ -57,18 +57,17 @@ class etl_SalmonidsElectro:
             outDFPassWQ = etl_SalmonidsElectro.process_Pass_Electrofishing(outDFDic, outDFEvent, etlInstance,
                                                                            dmInstance)
             ######
-            # ETL Process  Measurements
+            # ETL Process Measurements
             ######
             outDFMeasurements = etl_SalmonidsElectro.process_Measurements_Electrofishing(outDFDic, outDFEvent,
                                                                                         etlInstance, dmInstance)
-            '''
             ######
-            # ETL Process  Counts - To BE Developed
+            # ETL Process Counts (combined Measurements and Tallied) - To BE Developed
             ######
-            outDFMeasurements = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent, 
-                                                                                   outDFMeasurements, etlInstance, 
-                                                                                   dmInstance)
-            '''
+            outDFMeasurements = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent,
+                                                                                   outDFMeasurements, etlInstance,
+                                                                                   dmInstance):
+
 
             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -403,8 +402,8 @@ class etl_SalmonidsElectro:
     def process_Measurements_Electrofishing(outDFDic, outDFEvent, etlInstance, dmInstance):
 
         """
-        ETL routine for the Measurements form No Tally in the Electrofishing Survey 123 form.
-        Data is processed to table 'tblSummerMeasurements'
+        ETL routine for the Measurements form data in the Electrofishing Survey 123 form.
+        Data is processed to table 'tblSummerMeasurements'.  This is the data on which measurements were made.
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param outDFEvent - Dataframe with the processed Event/Survey info
@@ -414,6 +413,112 @@ class etl_SalmonidsElectro:
         :return:outDFMeasurements - Measurements dataframe appended to table 'tblSummerMeasurements
         """
 
+        try:
+            #Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'Measurements' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['Pass', 'SpeciesCode', 'LifeStage', 'Tally', 'NumberOfFish',
+                                'ForkLength_mm', 'LengthCategoryID', 'TotalWeight_g', 'BagWeight_g', 'FishWeight_g',
+                                'RandomSample', 'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'PriorSeason',
+                                'PITTag', 'Comments', 'QCFlag', 'QCNotes', 'ParentGlobalID', 'CreationDate']]
+
+            # Rename fields
+            outDFSubset.rename(columns={'ForkLength_mm': 'ForkLength',
+                                        'TotalWeight_g': 'TotalWeight',
+                                        'BagWeight_g': 'BagWeight',
+                                        'FishWeight_g': 'FishWeight',
+                                        'CreationDate': 'CreatedDate'}, inplace=True)
+
+            # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
+            outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
+            outDFSubset['Scales'] = outDFSubset['Scales'].fillna('No')
+
+            # Address NAN values pushed to None - Do this prior to data type conversion
+            cols_to_update = ['NumberOfFish', 'ForkLength', 'LengthCategoryID', 'TotalWeight', 'BagWeight',
+                              'FishWeight', 'Scales', 'Tissue', 'EnvelopeID', 'PITTag', 'Comments', 'QCFlag',
+                              'QCNotes', 'CreatedDate']
+
+            for col in cols_to_update:
+                outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
+
+            # Change Yes - No Fields to 'True'/ 'False' (i.e. Boolean)
+            outDFSubset['RandomSample'] = outDFSubset['RandomSample'].apply(
+                lambda x: True if x == 'Yes' else False)
+            outDFSubset['Tally'] = outDFSubset['Tally'].apply(
+                lambda x: True if x == 'Yes' else False)
+            outDFSubset['Injured'] = outDFSubset['Injured'].apply(
+                lambda x: True if x == 'Yes' else False)
+            outDFSubset['Dead'] = outDFSubset['Dead'].apply(
+                lambda x: True if x == 'Yes' else False)
+            outDFSubset['PriorSeason'] = outDFSubset['PriorSeason'].apply(
+                lambda x: True if x == 'Yes' else False)
+
+            # Join on GlobalID to get the EventID
+            outDFMeasurements = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
+                                         right_on='GlobalID', how='inner', suffixes=('', '_y'))
+
+            # Drop fields Not Being Appended
+            outDFMeasurements.drop(columns={'GlobalID', 'ParentGlobalID'}, inplace=True)
+
+            # Define CreatedDate to DateTime
+            outDFMeasurements['CreatedDate'] = pd.to_datetime(outDFMeasurements['CreatedDate'], format='%m/%d/%Y %I:%M:%S %p',
+                                                              errors='coerce')
+
+            # Time IS a Reserved Word must be enclose in []
+            insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
+                           f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, RandomSample, Injured, '
+                           f'Dead, Scales, Tissue, EnvelopeID, PriorSeason, PITTag, Comments, QCFlag, QCNotes, '
+                           f'CreatedDate, EventID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+                           f'?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            # Append the Contacts to the xref_EventContacts table
+            dm.generalDMClass.appendDataSet(cnxn, outDFMeasurements, "tblSummerMeasurements", insertQuery,
+                                            dmInstance)
+
+            logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            # Returning the Dataframe survey which was pushed to 'tblSummerPasses
+            return outDFMeasurements
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+
+    def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, etlInstance, dmInstance):
+
+        """
+        ETL routine for the Count data in the Electrofishing Survey 123 form. Routine will calculate the data going to
+        the 'tblSummerCount' table. This data is the total across Measured and Tallied data. Fish counts for each pass
+        during electrofishing and snorkeling surveys. Count values per records are the combined measured and
+        unmeasured fish by Species and Lifeform.
+
+        The processed measurement data in 'process_Measurements_Electrofishing' and dataframe 'outDFMeasurements' is
+        used in addition to the 'Tallied' data when calculating the Total Count (measured and unmeasured) by Pass,
+        Taxon, and Lifeform per survey.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvent - Dataframe with the processed Event/Survey info
+        :param outDFMeasurements - Dataframe with the measurements data pushed to tblSummerMeasurements
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:outDFCounts - Counts (measured and unmeasured) dataframe appended to table 'tblSummerCounts'
+        """
+
+
+        # STOPPED HERE 9/13/2024
         try:
             #Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
             inDF = None
