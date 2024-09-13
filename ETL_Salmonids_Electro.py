@@ -49,23 +49,17 @@ class etl_SalmonidsElectro:
             # ETL Event/Survey/Observers
             ######
             outDFEventSurvey = etl_SalmonidsElectro.process_Event_Electrofishing(outDFDic, etlInstance, dmInstance)
-            outDFEvent= outDFEventSurvey[1]
+            outDFEvent= outDFEventSurvey[0]
 
             ######
-            # ETL Pass
+            # ETL Passes
             ######
-            outDFPassWQ = etl_SalmonidsElectro.process_Pass(outDFEvent, etlInstance, dmInstance)
+            outDFPassWQ = etl_SalmonidsElectro.process_Pass_Electrofishing(outDFDic, outDFEvent, etlInstance, dmInstance)
 
             ######
             # ETL Process  Measurements - TO BE DEVELOPED
             ######
             #outDFMeasurements = etl_SalmonidsElectro.process_Event(outDFEvent, outDFPassWQ, etlInstance, dmInstance)
-
-
-
-
-
-
 
 
             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
@@ -315,6 +309,85 @@ class etl_SalmonidsElectro:
         except Exception as e:
 
             logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Survey: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+    def process_Pass_Electrofishing(outDFDic, outDFEvent, etlInstance, dmInstance):
+
+        """
+        ETL routine for the Pass form of the Electrofishing Survey 123 form.
+        Data is processed to
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvent - Dataframe with the processed Event/Survey info
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:
+        """
+
+        try:
+            #Export the Parent Event/Survey Dataframe from Dictionary List - Wild Card in Key is *EFish*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'Passes' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['GlobalID', 'Pass', 'PassType', 'Time_s', 'Volts', 'Setting', 'Comments', 'QCFlag',
+                                'QCNotes', 'ParentGlobalID', 'CreationDate', 'Creator']]
+
+            # Rename fields
+            outDFSubset.rename(columns={'Time_s': 'Time',
+                               'CreationDate': 'CreatedDate',
+                               }, inplace=True)
+
+            # Address NAN values pushed to None - Do this prior to data type conversion
+            cols_to_update = ['Volts', 'Setting', 'Comments', 'QCFlag', 'QCNotes', 'PassType', 'Time']
+            for col in cols_to_update:
+                outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
+
+            # Join on GlobalID to get the EventID
+            outDFPass = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID', right_on='GlobalID',
+                                 how='inner', suffixes=('', '_y'))
+
+            # Drop fields
+            outDFPass.drop(columns={'GlobalID_y', 'GlobalID', 'Creator', 'ParentGlobalID'}, inplace=True)
+
+
+            # Define CreatedDate to DateTime
+            outDFPass['CreatedDate'] = pd.to_datetime(outDFPass['CreatedDate'], format='%m/%d/%Y %I:%M:%S %p',
+                                                      errors='coerce')
+
+            # Set Time to lowest interger
+            outDFPass['Time'] = pd.to_numeric(outDFPass['Time'], errors='coerce', downcast='integer')
+
+            # Set Time as Object
+            outDFPass['Time'] = outDFPass['Time'].astype(object)
+
+            outDFPass2 = outDFPass[['EventID', 'QCFlag', 'QCNotes', 'Pass', 'PassType', 'Volts', 'Time',
+                                    'Setting', 'Comments', 'CreatedDate']]
+            # Time IS a Reserved Word must be enclose in []
+            insertQuery = (f'INSERT INTO tblSummerPasses (EventID, QCFlag, QCNotes, Pass, PassType, Volts, [Time], '
+                           f'Setting, Comments, CreatedDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            # Append the Contacts to the xref_EventContacts table
+            dm.generalDMClass.appendDataSet(cnxn, outDFPass2, "tblSummerPasses", insertQuery,
+                                            dmInstance)
+
+            logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Pass_Electrofishing"
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            # Returning the Dataframe survey which was pushed to 'tblSummerPasses
+            return outDFPass
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  ETL EFishing Pass ETL_Salmonids_Electro.py - process_Pass_Electrofishing: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
