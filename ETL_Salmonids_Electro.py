@@ -62,12 +62,10 @@ class etl_SalmonidsElectro:
             outDFMeasurements = etl_SalmonidsElectro.process_Measurements_Electrofishing(outDFDic, outDFEvent,
                                                                                         etlInstance, dmInstance)
             ######
-            # ETL Process Counts (combined Measurements and Tallied) - To BE Developed
+            # ETL Process Counts (combined Measurements and Tallied)
             ######
-            outDFMeasurements = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent,
-                                                                                   outDFMeasurements, etlInstance,
-                                                                                   dmInstance):
-
+            outDFCounts = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements,
+                                                                             outDFPassWQ, etlInstance, dmInstance)
 
             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -281,8 +279,6 @@ class etl_SalmonidsElectro:
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEfishSurveys", insertQuery,
                                             dmInstance)
 
-
-
             ##################
             # Define tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
@@ -434,6 +430,9 @@ class etl_SalmonidsElectro:
                                         'FishWeight_g': 'FishWeight',
                                         'CreationDate': 'CreatedDate'}, inplace=True)
 
+            # Subset to only the 'Tally' = 'No' fields, that is records with measurements
+            outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
+
             # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
             outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
             outDFSubset['Scales'] = outDFSubset['Scales'].fillna('No')
@@ -445,6 +444,10 @@ class etl_SalmonidsElectro:
 
             for col in cols_to_update:
                 outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
+
+            # LifeStage field has lookup code value of text 'NA' which is being imported as nan change these values
+            # to a text 'NA'
+            outDFSubset['LifeStage'] = outDFSubset['LifeStage'].fillna('NA')
 
             # Change Yes - No Fields to 'True'/ 'False' (i.e. Boolean)
             outDFSubset['RandomSample'] = outDFSubset['RandomSample'].apply(
@@ -468,6 +471,9 @@ class etl_SalmonidsElectro:
             # Define CreatedDate to DateTime
             outDFMeasurements['CreatedDate'] = pd.to_datetime(outDFMeasurements['CreatedDate'], format='%m/%d/%Y %I:%M:%S %p',
                                                               errors='coerce')
+
+            # Define NumberOfFish (i.e. Count) for measurements dataset where null should be all as 1.
+            outDFMeasurements['NumberOfFish'] = outDFMeasurements['NumberOfFish'].fillna(1)
 
             # Time IS a Reserved Word must be enclose in []
             insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
@@ -496,7 +502,7 @@ class etl_SalmonidsElectro:
             traceback.print_exc(file=sys.stdout)
 
 
-    def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, etlInstance, dmInstance):
+    def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, outDFPassWQ, etlInstance, dmInstance):
 
         """
         ETL routine for the Count data in the Electrofishing Survey 123 form. Routine will calculate the data going to
@@ -508,19 +514,21 @@ class etl_SalmonidsElectro:
         used in addition to the 'Tallied' data when calculating the Total Count (measured and unmeasured) by Pass,
         Taxon, and Lifeform per survey.
 
+        NOTE - Survey 123 Form in Field Season 2025 needs to be modified to by adding a 'Mortality' field to the survey.
+        This will also need to be added to this ETL workflow - KRS 20240913
+
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param outDFEvent - Dataframe with the processed Event/Survey info
+        :param outDFPassWQ - Dataframe wit the Pass information - used to defined PassType field
         :param outDFMeasurements - Dataframe with the measurements data pushed to tblSummerMeasurements
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
         :return:outDFCounts - Counts (measured and unmeasured) dataframe appended to table 'tblSummerCounts'
         """
-
-
-        # STOPPED HERE 9/13/2024
         try:
-            #Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
+
+            # Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
             inDF = None
             for key, df in outDFDic.items():
                 if 'Measurements' in key:
@@ -528,71 +536,227 @@ class etl_SalmonidsElectro:
                     break
 
             # Create initial dataframe subset
-            outDFSubset = inDF[['Pass', 'SpeciesCode', 'LifeStage', 'Tally', 'NumberOfFish',
-                                'ForkLength_mm', 'LengthCategoryID', 'TotalWeight_g', 'BagWeight_g', 'FishWeight_g',
-                                'RandomSample', 'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'PriorSeason',
-                                'PITTag', 'Comments', 'QCFlag', 'QCNotes', 'ParentGlobalID', 'CreationDate']]
+            outDFSubset = inDF[['Pass', 'SpeciesCode', 'LifeStage', 'Tally', 'NumberOfFish', 'Comments',
+                                'QCFlag', 'QCNotes', 'ParentGlobalID']]
 
             # Rename fields
-            outDFSubset.rename(columns={'ForkLength_mm': 'ForkLength',
-                                        'TotalWeight_g': 'TotalWeight',
-                                        'BagWeight_g': 'BagWeight',
-                                        'FishWeight_g': 'FishWeight',
-                                        'CreationDate': 'CreatedDate'}, inplace=True)
+            outDFSubset.rename(columns={'NumberOfFish': 'Count'}, inplace=True)
 
-            # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
-            outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
-            outDFSubset['Scales'] = outDFSubset['Scales'].fillna('No')
+            # Subset to Tally = Yes (i.e. No Measurements data
+            outDFSubset = outDFSubset[outDFSubset['Tally'] == 'Yes']
 
             # Address NAN values pushed to None - Do this prior to data type conversion
-            cols_to_update = ['NumberOfFish', 'ForkLength', 'LengthCategoryID', 'TotalWeight', 'BagWeight',
-                              'FishWeight', 'Scales', 'Tissue', 'EnvelopeID', 'PITTag', 'Comments', 'QCFlag',
-                              'QCNotes', 'CreatedDate']
+            cols_to_update = ['Comments', 'QCNotes', 'QCFlag']
 
             for col in cols_to_update:
                 outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
 
-            # Change Yes - No Fields to 'True'/ 'False' (i.e. Boolean)
-            outDFSubset['RandomSample'] = outDFSubset['RandomSample'].apply(
-                lambda x: True if x == 'Yes' else False)
-            outDFSubset['Tally'] = outDFSubset['Tally'].apply(
-                lambda x: True if x == 'Yes' else False)
-            outDFSubset['Injured'] = outDFSubset['Injured'].apply(
-                lambda x: True if x == 'Yes' else False)
-            outDFSubset['Dead'] = outDFSubset['Dead'].apply(
-                lambda x: True if x == 'Yes' else False)
-            outDFSubset['PriorSeason'] = outDFSubset['PriorSeason'].apply(
-                lambda x: True if x == 'Yes' else False)
+            # LifeStage field has lookup code value of text 'NA' which is being imported as nan change these values
+            # to a text 'NA'
+            outDFSubset['LifeStage'] = outDFSubset['LifeStage'].fillna('NA')
 
-            # Join on GlobalID to get the EventID
-            outDFMeasurements = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
-                                         right_on='GlobalID', how='inner', suffixes=('', '_y'))
+            # Join ParentGlobalID on GlobalID to get the EventID in the Events Dataframe
+            outDFCounts = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
+                                   right_on='GlobalID', how='inner', suffixes=('', '_y'))
 
             # Drop fields Not Being Appended
-            outDFMeasurements.drop(columns={'GlobalID', 'ParentGlobalID'}, inplace=True)
+            outDFCounts.drop(columns={'GlobalID', 'ParentGlobalID', 'Tally'}, inplace=True)
 
-            # Define CreatedDate to DateTime
-            outDFMeasurements['CreatedDate'] = pd.to_datetime(outDFMeasurements['CreatedDate'], format='%m/%d/%Y %I:%M:%S %p',
-                                                              errors='coerce')
+            # Add 'Source' field = Counts
+            outDFCounts.insert(8, 'Source', 'Counts')
 
-            # Time IS a Reserved Word must be enclose in []
-            insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
-                           f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, RandomSample, Injured, '
-                           f'Dead, Scales, Tissue, EnvelopeID, PriorSeason, PITTag, Comments, QCFlag, QCNotes, '
-                           f'CreatedDate, EventID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
-                           f'?, ?, ?)')
+            # Prior to Composite can't have any None or nan values
+            outDFCounts['QCFlag'] = outDFCounts['QCFlag'].fillna('NoValue')
+
+            # Create Composite Index
+            outDFCounts['Composite'] = (outDFCounts['EventID'].astype(str) + '-' + outDFCounts['Pass'].astype(str)
+                                        + '-' + outDFCounts['SpeciesCode'] + '-' + outDFCounts['LifeStage'] + '-' +
+                                        outDFCounts['QCFlag'])
+
+            # Working to Identify Duplicate Tally Records
+            # Create Series index with counts by 'Composite Index'
+            counts = outDFCounts['Composite'].value_counts()
+
+            # Add field with count of the 'Composite Index
+            outDFCounts['ReCount'] = outDFCounts['Composite'].map(counts)
+
+            # Adding Sort to easily see duplicates or more than one per composite
+            outDFCounts = outDFCounts.sort_values(by='Composite')
+
+            if outDFCounts['ReCount'].max() > 1:
+                # Where Duplicates on the 'Composite' index fields - Merge records into one. Delete in the 'outDFCounts'
+                # dataframe and append back in the merged records
+
+                # Not Unique Dataframe
+                outDFCountsNotUnique = outDFCounts[outDFCounts['ReCount'] > 1]
+
+                outDFCountsNotUniqueSub1 = outDFCountsNotUnique[['EventID', 'Pass', 'SpeciesCode', 'LifeStage',
+                                                                 'QCFlag', 'Composite']]
+
+                # Define Unique Index on the ['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag'] fields
+                outDFCountsUnique = outDFCountsNotUniqueSub1.drop_duplicates(
+                    subset=['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag', 'Composite'])
+
+                # Calculate the 'Sum' of the 'Count' field across the duplicates - GroupBy on the 'Composite' field
+                outDFCountsNotUniqueToSum = outDFCountsNotUnique[['Composite', 'Count']]
+
+                dupCountRecDF = outDFCountsNotUniqueToSum.groupby(['Composite']).sum()
+
+                dupCountRecDF.reset_index(inplace=True)
+
+                # Join the 'dupCountRecDF' with the 'Count' field summed across the duplciates to the df to be appended
+                outDFCountsUniqueToAppend = pd.merge(outDFCountsUnique, dupCountRecDF[['Composite', 'Count']],
+                                                     left_on='Composite', right_on='Composite', how='inner',
+                                                     suffixes=('', '_y'))
+
+                # Insert 'QCNotes', and 'Source' fields
+                outDFCountsUniqueToAppend.insert(2, 'QCNotes', None)
+                outDFCountsUniqueToAppend.insert(1, 'Source', 'Counts')
+
+                # Drop Records in the 'outDFCounts' where 'RecCount > 1
+                outDFCounts2 = outDFCounts[outDFCounts['ReCount'] <= 1]
+
+                # Append Dups that have been Summed with tne non duplicates
+                outDFCounts3 = pd.concat([outDFCounts2, outDFCountsUniqueToAppend], axis=0)
+
+                outDFCounts = outDFCounts3[['Pass', 'SpeciesCode', 'LifeStage', 'Count', 'Comments',
+                                                        'QCFlag', 'QCNotes', 'EventID']]
+
+                outDFCounts.insert(8, 'Source', 'Counts')
+
+                del outDFCounts2, outDFCounts3
+            else:
+                # Drop Count and Composite fields
+                outDFCounts.drop(columns={'RecCount', 'Composite'}, inplace=True)
+
+
+            # Clean Up 'outDFMeasurements' to match the OutDFCounts field schema
+            outDFMeasurementsMatch = outDFMeasurements[['Pass', 'SpeciesCode', 'LifeStage', 'NumberOfFish', 'Comments',
+                                                        'QCFlag', 'QCNotes', 'EventID']]
+
+            # Change field name NumberOfFish to Count
+            outDFMeasurementsMatch.rename(columns={'NumberOfFish': 'Count'}, inplace=True)
+
+            # Add 'Source' field = Measurements
+            outDFMeasurementsMatch.insert(8, 'Source', 'Measurements')
+
+            # Append the 'outDFCounts' and 'outDFMeasurements' dataframes
+            outDFCountswMeasure= pd.concat([outDFCounts, outDFMeasurementsMatch], axis=0)
+
+            # Create a dataframe with only the subset of fields with the unique index to be summed, this will be the
+            # value pushed to the 'tblSummerCounts' with accomanying metadata (e.g. PassType, and Tally Comments)
+            outDFToSummary = outDFCountswMeasure[['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag', 'Count']]
+
+            # Group By Summary doesn't handle nan or none values so setting 'QCFlag' null values to NoFlag
+            outDFToSummary['QCFlag'] = outDFToSummary['QCFlag'].fillna('NoFlag')
+
+            # Summarize Counts by EventID, Pass, SpeciesCode, LifeStage, 'QCFlag'
+            outSummary = outDFToSummary.groupby(['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag']).sum()
+
+            # Remove Index on Group By
+            outSummaryNoIndex = outSummary.reset_index()
+
+            # Set the QCFlag = 'NoFlag' back to None
+            outSummaryNoIndex['QCFlag'] = outSummaryNoIndex['QCFlag'].replace('NoFlag', None)
+
+            # Define the Pass Type via the PassWQ dataframe
+            outDFCountswPass = pd.merge(outSummaryNoIndex, outDFPassWQ[['EventID', 'Pass', 'PassType']],
+                                        left_on=['EventID', 'Pass'], right_on=['EventID', 'Pass'],
+                                        how='left', suffixes=('', '_y'))
+
+            # Check is the PassType is nan, if yes then there is an undefined pass that should be addressed post ETL
+            # Routine.  Should still be able to Append but will want to define an accompanying Pass and Pass Type in the
+            # tblSummerPasses tables
+            outDFCountswPassNull = outDFCountswPass[outDFCountswPass['PassType'].isna()]
+            numRec = outDFCountswPassNull.shape[0]
+            if numRec >= 1:
+
+                # Flag records with no PassType as PND = Pass Not Defined during data processing, extract, transform
+                # and load
+                outDFCountswPass.loc[outDFCountswPass['PassType'].isna(), 'QCFlag'] = 'PND'
+                outDFCountswPassNull.loc[outDFCountswPassNull['PassType'].isna(), 'QCFlag'] = 'PND'
+                logMsg = (f'WARNING there are {numRec} records without a defined PassType, adding QCFlag - PND.')
+
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+
+                outPath = f'{etlInstance.outDir}\RecordsSalmonids_Counts_Pass_NoDefinedPass.csv'
+                if os.path.exists(outPath):
+                    os.remove(outPath)
+
+                outDFCountswPassNull.to_csv(outPath, index=True)
+
+                logMsg = (f'WARNING Exporting Records without a defined Pass in Summer Counts see - {outPath} \n'
+                          f'Flagged with QC Flag PND - Address these pass omissions post ETL routine.')
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+
+                # Set nan PassType value to None so will append without issue
+                outDFCountswPass['PassType'] = dm.generalDMClass.nan_to_none(outDFCountswPass['PassType'])
+
+            # Add back the Comments and QCNotes fields for the Tally records (i.e. dataframe outDFSub) by EventID,
+            # Pass, Species, LifeStage from the 'outDFCounts' DF.
+
+            # Define Composite Index values on the 'outDFCount' (i.e. Tally Records) and the 'outDFCountsWPass' df so
+            # a join can be done to populate the 'QCNotes' and 'Comments' fields in the 'Tally' Records.  Only QCNotes
+            # and Comments are being retained for the 'Tally' reocrds, these attributes are being retain for the m
+            # measurement records in the 'tblSummerMeasurments' table
+
+            # Prior to Composite can't have any None or nan values
+            outDFCounts['QCFlag'] = outDFCounts['QCFlag'].fillna('NoValue')
+
+            # Create Composite Index
+            outDFCounts['Composite'] = (outDFCounts['EventID'].astype(str) + '-' + outDFCounts['Pass'].astype(str)
+                                        + '-' + outDFCounts['SpeciesCode'] + '-' + outDFCounts['LifeStage'] + '-' +
+                                        outDFCounts['QCFlag'])
+
+            # Prior to Composite can't have any None or nan values
+            outDFCountswPass['QCFlag'] = outDFCountswPass['QCFlag'].fillna('NoValue')
+
+            outDFCountswPass['Composite'] = (outDFCountswPass['EventID'].astype(str) + '-' + outDFCountswPass['Pass'].astype(str)
+                                        + '-' + outDFCountswPass['SpeciesCode'] + '-' + outDFCountswPass['LifeStage'] + '-' +
+                                        outDFCountswPass['QCFlag'])
+
+            # Join the DF wit the Counts and the dataframe with the Tally 'QCNotes' and 'Comments' fields so these
+            # fields are not dropped during the Count Summary Routine
+            outDFCountswPasswComments = pd.merge(outDFCountswPass, outDFCounts[['Composite', 'QCNotes', 'Comments']],
+                                                 left_on='Composite',
+                                                 right_on='Composite',
+                                                 how='left', suffixes=('', '_y'))
+
+            # Set the nan to None
+            cols_to_update = ['Comments', 'QCNotes']
+
+            for col in cols_to_update:
+                outDFCountswPasswComments[col] = dm.generalDMClass.nan_to_none(outDFCountswPasswComments[col])
+
+            # Set 'QCFlag' value 'NoValue' to None
+            outDFCountswPasswComments.loc[outDFCountswPasswComments['QCFlag'] == 'NoValue', 'QCFlag'] = None
+
+            # Define Created Date
+            from datetime import datetime
+            dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+            outDFCountswPasswComments['CreatedDate'] = dateNow
+
+            # Drop Composite
+            outDFCountswPasswComments.drop(columns={'Composite'}, inplace=True)
+
+            # Append final query to the count table
+            insertQuery = (f'INSERT INTO tblSummerCounts (EventID, Pass, SpeciesCode, LifeStage, QCFlag, Count, '
+                           f'PassType, QCNotes, Comments, CreatedDate) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outDFMeasurements, "tblSummerMeasurements", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outDFCountswPasswComments, "tblSummerCounts", insertQuery,
                                             dmInstance)
 
-            logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
+            logMsg = f"Success ETL EFishing Counts ETL_Salmonids_Electro.py - process_Counts_Electrofishing"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            # Returning the Dataframe survey which was pushed to 'tblSummerPasses
-            return outDFMeasurements
+            # Returning the Dataframe s
+            return outDFCountswPasswComments
 
         except Exception as e:
 
@@ -600,7 +764,6 @@ class etl_SalmonidsElectro:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
-
 
 
 def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
@@ -677,7 +840,6 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
             inDFOthersParsed3.insert(2, "Last_Name", None)
             inDFOthersParsed3.insert(3, "First_Name", None)
 
-
             # Insert 'OBSCODE to be defined
             inDFOthersParsed3.insert(1, "OBSCODE", None)
 
@@ -686,7 +848,6 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
             # Add Field checking if '_' is in field Observers
             inDFOthersParsed3_subset['Underscore'] = inDFOthersParsed3_subset['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
-
 
             ###############################
             # Define the 'First_Name' field
@@ -706,12 +867,11 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
             inDFOthersParsed3_subset['Last_Name'] = inDFOthersParsed3_subset.apply(
                 lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
 
-            # Define the OBSCODE via a join on the First and Last Name fields in dataframes 'inDFOthersParsed3_subset' and
-            # outDFtluObservers
+            # Define the OBSCODE via a join on the First and Last Name fields in dataframes 'inDFOthersParsed3_subset'
+            # and outDFtluObservers
 
             mergedOtherDf = pd.merge(inDFOthersParsed3_subset, outDFtluObservers, left_on=['Last_Name', 'First_Name'],
                 right_on=['LASTNAME', 'FIRSTNAME'], how='left', suffixes=('_x', ''))
-
 
             # Subset to the needed fields
             mergedOtherDf2 = mergedOtherDf[['EventID', 'Observers', 'OBSCODE']]
