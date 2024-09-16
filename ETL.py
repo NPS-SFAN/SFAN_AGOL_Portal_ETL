@@ -17,7 +17,7 @@ class etlInstance:
     # Class Variables
     numETLInstances = 0
 
-    def __init__(self, protocol, inDBBE, flID, yearLU, inUser, outDir):
+    def __init__(self, protocol, inDBBE, flID, yearLU, inUser, outDir, AGOLDownload):
         """
         Define the instantiated etlInstance attributes
         
@@ -26,7 +26,8 @@ class etlInstance:
         :param yearLU: Year being processed
         :param flID: Feature Layer ID
         :param inUser: NPS UserNam
-        :paam outDir: Output directory
+        :param outDir: Output directory
+        :param AGOLDownload: Define if the AGOL/Portal Feature Layers need to be download, used in when developing code.
         
         :return: instantiated self object
         """
@@ -37,6 +38,7 @@ class etlInstance:
         self.yearLU = yearLU
         self.inUser = inUser
         self.outDir = outDir
+        self.AGOLDownload = AGOLDownload
 
         # Update the Class Variable
         etlInstance.numETLInstances += 1
