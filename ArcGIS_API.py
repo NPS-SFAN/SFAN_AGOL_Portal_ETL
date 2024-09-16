@@ -50,20 +50,25 @@ class generalArcGIS:
         """
 
         try:
-            # ####Temp Turning Off While AGOL is having performance issues 8/14/2024
-            # # Connect to the Cloud via pass credentials workflow
-            # if generalArcGIS.credentials.lower() == 'oauth':
-            #     outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
-            # else: #Connect via ArcGISPro Environment
-            #     outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
-            #
-            # # Import the feature layer
-            # outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
-            # outzipPath = outFeatureLayer[0]
-            # outName = outFeatureLayer[1]
 
-            outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024\SFAN_Salmonids_EFish_2024v1.2_20240911-132502.zip'
-            outName = 'SFAN_Salmonids_EFish_2024v1.2_20240911-132502'
+            if AGOLDownload == 'Yes':
+            ####Temp Turning Off While AGOL is having performance issues 8/14/2024
+            # Connect to the Cloud via pass credentials workflow
+            if generalArcGIS.credentials.lower() == 'oauth':
+                outGIS = connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            else: #Connect via ArcGISPro Environment
+                outGIS = connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+
+            # Import the feature layer
+            outFeatureLayer = importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance)
+            outzipPath = outFeatureLayer[0]
+            outName = outFeatureLayer[1]
+
+            elif AGOLDownlaod == 'No': #Use when developing - don't need to download the AGOl data each time
+                # Hard Code the Imported AGOL/Portal data when debuging - turn off lines 53-63 above - crude I know.
+                outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024\SFAN_Salmonids_EFish_2024v1.2_20240911-132502.zip'
+                outName = 'SFAN_Salmonids_EFish_2024v1.2_20240911-132502'
+
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
             # Path to Unzipped files
