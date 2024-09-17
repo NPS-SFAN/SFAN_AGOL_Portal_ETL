@@ -72,7 +72,7 @@ outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_
 # Variable defines if the AGOL Feature layers needs to be download, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updates in the 'ArcGIS_API.py' -
 # processFeatureLayer method when set to 'No'
-AGOLDownload = 'No'  #('Yes'|'No')
+AGOLDownload = 'No'  # ('Yes'|'No')
 
 def main():
     logger = logging.getLogger(__name__)
