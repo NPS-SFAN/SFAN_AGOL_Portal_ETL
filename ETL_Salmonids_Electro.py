@@ -537,10 +537,11 @@ class etl_SalmonidsElectro:
 
             # Create initial dataframe subset
             outDFSubset = inDF[['Pass', 'SpeciesCode', 'LifeStage', 'Tally', 'NumberOfFish', 'Comments',
-                                'QCFlag', 'QCNotes', 'ParentGlobalID']]
+                                'QCFlag', 'QCNotes', 'ParentGlobalID', 'Dead']]
 
             # Rename fields
-            outDFSubset.rename(columns={'NumberOfFish': 'Count'}, inplace=True)
+            outDFSubset.rename(columns={'NumberOfFish': 'Count',
+                                        'Dead': 'Mortality'}, inplace=True)
 
             # Subset to Tally = Yes (i.e. No Measurements data
             outDFSubset = outDFSubset[outDFSubset['Tally'] == 'Yes']
@@ -558,6 +559,10 @@ class etl_SalmonidsElectro:
             # Join ParentGlobalID on GlobalID to get the EventID in the Events Dataframe
             outDFCounts = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
                                    right_on='GlobalID', how='inner', suffixes=('', '_y'))
+
+            # Make Mortality a Boolean field
+            outDFCounts['Mortality'] = outDFCounts['Mortality'].apply(
+                lambda x: True if x == 'Yes' else False)
 
             # Drop fields Not Being Appended
             outDFCounts.drop(columns={'GlobalID', 'ParentGlobalID', 'Tally'}, inplace=True)
@@ -620,7 +625,7 @@ class etl_SalmonidsElectro:
                 outDFCounts3 = pd.concat([outDFCounts2, outDFCountsUniqueToAppend], axis=0)
 
                 outDFCounts = outDFCounts3[['Pass', 'SpeciesCode', 'LifeStage', 'Count', 'Comments',
-                                                        'QCFlag', 'QCNotes', 'EventID']]
+                                                        'QCFlag', 'QCNotes', 'EventID', 'Mortality']]
 
                 outDFCounts.insert(8, 'Source', 'Counts')
 
@@ -694,7 +699,7 @@ class etl_SalmonidsElectro:
                 # Set nan PassType value to None so will append without issue
                 outDFCountswPass['PassType'] = dm.generalDMClass.nan_to_none(outDFCountswPass['PassType'])
 
-            # Add back the Comments and QCNotes fields for the Tally records (i.e. dataframe outDFSub) by EventID,
+            # Add back the Comments, QCNotes and Mortality fields for the Tally records (i.e. dataframe outDFSub) by EventID,
             # Pass, Species, LifeStage from the 'outDFCounts' DF.
 
             # Define Composite Index values on the 'outDFCount' (i.e. Tally Records) and the 'outDFCountsWPass' df so
@@ -719,7 +724,8 @@ class etl_SalmonidsElectro:
 
             # Join the DF wit the Counts and the dataframe with the Tally 'QCNotes' and 'Comments' fields so these
             # fields are not dropped during the Count Summary Routine
-            outDFCountswPasswComments = pd.merge(outDFCountswPass, outDFCounts[['Composite', 'QCNotes', 'Comments']],
+            outDFCountswPasswComments = pd.merge(outDFCountswPass, outDFCounts[['Composite', 'QCNotes', 'Comments',
+                                                                                'Mortality']],
                                                  left_on='Composite',
                                                  right_on='Composite',
                                                  how='left', suffixes=('', '_y'))
@@ -733,6 +739,10 @@ class etl_SalmonidsElectro:
             # Set 'QCFlag' value 'NoValue' to None
             outDFCountswPasswComments.loc[outDFCountswPasswComments['QCFlag'] == 'NoValue', 'QCFlag'] = None
 
+            # Final Operation on Mortality, if True set value to Count, else set to zero (i.e. no mortality)
+            outDFCountswPasswComments['Mortality'] = outDFCountswPasswComments.apply(
+                lambda row: row['Count'] if row['Mortality'] == True else 0, axis=1)
+
             # Define Created Date
             from datetime import datetime
             dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
@@ -743,8 +753,8 @@ class etl_SalmonidsElectro:
 
             # Append final query to the count table
             insertQuery = (f'INSERT INTO tblSummerCounts (EventID, Pass, SpeciesCode, LifeStage, QCFlag, Count, '
-                           f'PassType, QCNotes, Comments, CreatedDate) '
-                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                           f'PassType, QCNotes, Comments, Mortality, CreatedDate) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
