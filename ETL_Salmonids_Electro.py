@@ -552,8 +552,7 @@ class etl_SalmonidsElectro:
                                 'QCFlag', 'QCNotes', 'ParentGlobalID', 'Dead']]
 
             # Rename fields
-            outDFSubset.rename(columns={'NumberOfFish': 'Count',
-                                        'Dead': 'Mortality'}, inplace=True)
+            outDFSubset.rename(columns={'NumberOfFish': 'Count'}, inplace=True)
 
             # Subset to Tally = Yes (i.e. No Measurements data
             outDFSubset = outDFSubset[outDFSubset['Tally'] == 'Yes']
@@ -572,12 +571,11 @@ class etl_SalmonidsElectro:
             outDFCounts = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
                                    right_on='GlobalID', how='inner', suffixes=('', '_y'))
 
-            # Make Mortality a Boolean field
-            outDFCounts['Mortality'] = outDFCounts['Mortality'].apply(
-                lambda x: True if x == 'Yes' else False)
+            # Define Mortality Field to the Count Value if 'Dead' = 'Yes' else set to zero.
+            outDFCounts['Mortality'] = np.where(outDFCounts['Dead'] == 'Yes', outDFCounts['Count'], 0)
 
             # Drop fields Not Being Appended
-            outDFCounts.drop(columns={'GlobalID', 'ParentGlobalID', 'Tally'}, inplace=True)
+            outDFCounts.drop(columns={'GlobalID', 'ParentGlobalID', 'Tally', 'Dead'}, inplace=True)
 
             # Add 'Source' field = Counts
             outDFCounts.insert(8, 'Source', 'Counts')
@@ -646,13 +644,28 @@ class etl_SalmonidsElectro:
                 # Drop Count and Composite fields
                 outDFCounts.drop(columns={'RecCount', 'Composite'}, inplace=True)
 
+            # Replace NaN values in 'Mortality' with 0
+            outDFCounts['Mortality'] = outDFCounts['Mortality'].fillna(0)
+
+            print(outDFCounts)
+
+            #########################################
+            # Start processing Measurements Dataframe
+            # #######################################
 
             # Clean Up 'outDFMeasurements' to match the OutDFCounts field schema
             outDFMeasurementsMatch = outDFMeasurements[['Pass', 'SpeciesCode', 'LifeStage', 'NumberOfFish', 'Comments',
-                                                        'QCFlag', 'QCNotes', 'EventID']]
+                                                        'QCFlag', 'QCNotes', 'EventID', 'Dead']]
 
             # Change field name NumberOfFish to Count
             outDFMeasurementsMatch.rename(columns={'NumberOfFish': 'Count'}, inplace=True)
+
+            # Define Mortality Field to the Count Value if 'Dead' = True else set to zero.
+            outDFMeasurementsMatch['Mortality'] = np.where(outDFMeasurementsMatch['Dead'] == True,
+                                                           outDFMeasurementsMatch['Count'], 0)
+
+            # Drop Dead Field
+            outDFMeasurementsMatch.drop(columns=['Dead'], inplace=True)
 
             # Add 'Source' field = Measurements
             outDFMeasurementsMatch.insert(8, 'Source', 'Measurements')
