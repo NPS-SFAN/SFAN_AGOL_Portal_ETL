@@ -480,7 +480,8 @@ class etl_SalmonidsElectro:
             # Define Random Sample
             ######################
 
-            # Set all RandomSample values to False - then will define the first ten Coho by Pass to 'True' (i.e. Yes Random)
+            # Set all RandomSample values to False - then will define the first ten Coho by Pass to 'True'
+            # (i.e. Yes Random)
             outDFMeasurements['RandomSample'] = False
 
             # Apply the 'assignRandomSampleFirst10' after grouping by 'Event' and 'Pass' to
@@ -512,7 +513,6 @@ class etl_SalmonidsElectro:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
-
 
     def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, outDFPassWQ, etlInstance, dmInstance):
 
