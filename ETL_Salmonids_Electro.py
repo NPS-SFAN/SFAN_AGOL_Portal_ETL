@@ -670,6 +670,9 @@ class etl_SalmonidsElectro:
             # Add 'Source' field = Measurements
             outDFMeasurementsMatch.insert(8, 'Source', 'Measurements')
 
+            # Set QC Value None to 'NoValue'
+            outDFMeasurementsMatch['QCFlag'] = outDFMeasurementsMatch['QCFlag'].fillna('NoValue')
+
             # Append the 'outDFCounts' and 'outDFMeasurements' dataframes
             outDFCountswMeasure= pd.concat([outDFCounts, outDFMeasurementsMatch], axis=0)
 
@@ -694,16 +697,36 @@ class etl_SalmonidsElectro:
                                         left_on=['EventID', 'Pass'], right_on=['EventID', 'Pass'],
                                         how='left', suffixes=('', '_y'))
 
+            ###############################################
+            # Summarize the Total Mortalities by index 'EventID', 'Pass', 'SpeciesCode', 'LifeStage', this will be
+            # the 'Mortality' field value by the above index.
+            outDFCountswMeasureSub = outDFCountswMeasure[['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'Mortality',
+                                                          'QCFlag']]
+
+            outDFMortalityByIndex = outDFCountswMeasureSub.groupby(['EventID', 'Pass', 'SpeciesCode',
+                                                                    'LifeStage', 'QCFlag']).sum()
+
+            # Remove the index
+            outDFMortalityByIndex.reset_index(inplace=True)
+
+            # Define the Mortality Field on the index 'EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag'
+            outDFCountswPass_wMort = pd.merge(outDFCountswPass, outDFMortalityByIndex[['EventID', 'Pass', 'SpeciesCode',
+                                                                                       'LifeStage', 'QCFlag',
+                                                                                       'Mortality']],
+                                              on=['EventID', 'Pass', 'SpeciesCode', 'LifeStage', 'QCFlag'],
+                                              how='left', suffixes=('', '_y'))
+
+            ################################
             # Check is the PassType is nan, if yes then there is an undefined pass that should be addressed post ETL
             # Routine.  Should still be able to Append but will want to define an accompanying Pass and Pass Type in the
             # tblSummerPasses tables
-            outDFCountswPassNull = outDFCountswPass[outDFCountswPass['PassType'].isna()]
+            outDFCountswPassNull = outDFCountswPass_wMort[outDFCountswPass['PassType'].isna()]
             numRec = outDFCountswPassNull.shape[0]
             if numRec >= 1:
 
                 # Flag records with no PassType as PND = Pass Not Defined during data processing, extract, transform
                 # and load
-                outDFCountswPass.loc[outDFCountswPass['PassType'].isna(), 'QCFlag'] = 'PND'
+                outDFCountswPass_wMort.loc[outDFCountswPass['PassType'].isna(), 'QCFlag'] = 'PND'
                 outDFCountswPassNull.loc[outDFCountswPassNull['PassType'].isna(), 'QCFlag'] = 'PND'
                 logMsg = (f'WARNING there are {numRec} records without a defined PassType, adding QCFlag - PND.')
 
@@ -722,9 +745,9 @@ class etl_SalmonidsElectro:
                 logging.warning(logMsg)
 
                 # Set nan PassType value to None so will append without issue
-                outDFCountswPass['PassType'] = dm.generalDMClass.nan_to_none(outDFCountswPass['PassType'])
+                outDFCountswPass_wMort['PassType'] = dm.generalDMClass.nan_to_none(outDFCountswPass_wMort['PassType'])
 
-            # Add back the Comments, QCNotes and Mortality fields for the Tally records (i.e. dataframe outDFSub) by EventID,
+            # Add back the Comments, QCNotes and Mortality fields for the Tally records (i.e. dataframe outDFCounts) by EventID,
             # Pass, Species, LifeStage from the 'outDFCounts' DF.
 
             # Define Composite Index values on the 'outDFCount' (i.e. Tally Records) and the 'outDFCountsWPass' df so
@@ -741,16 +764,18 @@ class etl_SalmonidsElectro:
                                         outDFCounts['QCFlag'])
 
             # Prior to Composite can't have any None or nan values
-            outDFCountswPass['QCFlag'] = outDFCountswPass['QCFlag'].fillna('NoValue')
+            outDFCountswPass_wMort['QCFlag'] = outDFCountswPass_wMort['QCFlag'].fillna('NoValue')
 
-            outDFCountswPass['Composite'] = (outDFCountswPass['EventID'].astype(str) + '-' + outDFCountswPass['Pass'].astype(str)
-                                        + '-' + outDFCountswPass['SpeciesCode'] + '-' + outDFCountswPass['LifeStage'] + '-' +
-                                        outDFCountswPass['QCFlag'])
+            outDFCountswPass_wMort['Composite'] = (outDFCountswPass_wMort['EventID'].astype(str) + '-' +
+                                                   outDFCountswPass_wMort['Pass'].astype(str)
+                                                   + '-' + outDFCountswPass_wMort['SpeciesCode'] + '-'
+                                                   + outDFCountswPass_wMort['LifeStage'] + '-' +
+                                                   outDFCountswPass_wMort['QCFlag'])
 
             # Join the DF wit the Counts and the dataframe with the Tally 'QCNotes' and 'Comments' fields so these
             # fields are not dropped during the Count Summary Routine
-            outDFCountswPasswComments = pd.merge(outDFCountswPass, outDFCounts[['Composite', 'QCNotes', 'Comments',
-                                                                                'Mortality']],
+            outDFCountswPasswComments = pd.merge(outDFCountswPass_wMort, outDFCounts[['Composite', 'QCNotes',
+                                                                                      'Comments']],
                                                  left_on='Composite',
                                                  right_on='Composite',
                                                  how='left', suffixes=('', '_y'))
@@ -761,12 +786,8 @@ class etl_SalmonidsElectro:
             for col in cols_to_update:
                 outDFCountswPasswComments[col] = dm.generalDMClass.nan_to_none(outDFCountswPasswComments[col])
 
-            # Set 'QCFlag' value 'NoValue' to None
+            # Set 'QCFlag' value 'NoValue' to None prior to appending so Access doesn't have issue
             outDFCountswPasswComments.loc[outDFCountswPasswComments['QCFlag'] == 'NoValue', 'QCFlag'] = None
-
-            # Final Operation on Mortality, if True set value to Count, else set to zero (i.e. no mortality)
-            outDFCountswPasswComments['Mortality'] = outDFCountswPasswComments.apply(
-                lambda row: row['Count'] if row['Mortality'] == True else 0, axis=1)
 
             # Define Created Date
             from datetime import datetime
@@ -778,7 +799,7 @@ class etl_SalmonidsElectro:
 
             # Append final query to the count table
             insertQuery = (f'INSERT INTO tblSummerCounts (EventID, Pass, SpeciesCode, LifeStage, QCFlag, Count, '
-                           f'PassType, QCNotes, Comments, Mortality, CreatedDate) '
+                           f'PassType, Mortality, QCNotes, Comments, CreatedDate) '
                            f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
