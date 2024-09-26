@@ -400,6 +400,8 @@ class etl_SalmonidsElectro:
         """
         ETL routine for the Measurements form data in the Electrofishing Survey 123 form.
         Data is processed to table 'tblSummerMeasurements'.  This is the data on which measurements were made.
+        By Event and Pass first ten 'COHO' occurrences are given a 'RandomSample' value of 'True', all other
+        records by Event, Pass are given a 'RandomSample' value of 'False'
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param outDFEvent - Dataframe with the processed Event/Survey info
@@ -450,8 +452,6 @@ class etl_SalmonidsElectro:
             outDFSubset['LifeStage'] = outDFSubset['LifeStage'].fillna('NA')
 
             # Change Yes - No Fields to 'True'/ 'False' (i.e. Boolean)
-            outDFSubset['RandomSample'] = outDFSubset['RandomSample'].apply(
-                lambda x: True if x == 'Yes' else False)
             outDFSubset['Tally'] = outDFSubset['Tally'].apply(
                 lambda x: True if x == 'Yes' else False)
             outDFSubset['Injured'] = outDFSubset['Injured'].apply(
@@ -460,6 +460,7 @@ class etl_SalmonidsElectro:
                 lambda x: True if x == 'Yes' else False)
             outDFSubset['PriorSeason'] = outDFSubset['PriorSeason'].apply(
                 lambda x: True if x == 'Yes' else False)
+
 
             # Join on GlobalID to get the EventID
             outDFMeasurements = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
@@ -475,7 +476,18 @@ class etl_SalmonidsElectro:
             # Define NumberOfFish (i.e. Count) for measurements dataset where null should be all as 1.
             outDFMeasurements['NumberOfFish'] = outDFMeasurements['NumberOfFish'].fillna(1)
 
-            # Time IS a Reserved Word must be enclose in []
+            ######################
+            # Define Random Sample
+            ######################
+
+            # Set all RandomSample values to False - then will define the first ten Coho by Pass to 'True' (i.e. Yes Random)
+            outDFMeasurements['RandomSample'] = False
+
+            # Apply the 'assignRandomSampleFirst10' after grouping by 'Event' and 'Pass' to
+            outDFMeasurementswRandom = outDFMeasurements.groupby(['EventID', 'Pass']).apply(assignRandomSampleFirst10)
+            ##################################################
+
+            # Define insert/append query
             insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
                            f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, RandomSample, Injured, '
                            f'Dead, Scales, Tissue, EnvelopeID, PriorSeason, PITTag, Comments, QCFlag, QCNotes, '
@@ -484,7 +496,7 @@ class etl_SalmonidsElectro:
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outDFMeasurements, "tblSummerMeasurements", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, outDFMeasurementswRandom, "tblSummerMeasurements", insertQuery,
                                             dmInstance)
 
             logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
@@ -931,3 +943,24 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
+# Function to assign RandomSample to the first 'CO' in the first 10 rows
+def assignRandomSampleFirst10(group):
+    """
+    Assigned a True value to the First 10 occurrences of 'CO'  by passed Group By on 'Event' and 'Pass'
+
+    :param group: Group By value
+
+    :return:
+    """
+
+    # Filter for rows where 'SpeciesCode' is 'CO'
+    co_mask = group['SpeciesCode'] == 'CO'
+    co_subset = group[co_mask]
+
+    # Set 'RandomSample' to True for the first 10 'CO' records
+    if len(co_subset) > 0:
+        group.loc[co_subset.head(10).index, 'RandomSample'] = True
+
+    return group
