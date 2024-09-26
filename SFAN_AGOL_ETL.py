@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Protocol Being Processes
 protocol = 'Salmonids-EFish'   #(SNPLPORE|Salmonids-EFish|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20240913 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20240916 - Copy.accdb'
 
 # Year Being Processed
 inYear = 2024
@@ -69,7 +69,7 @@ dateNow = datetime.now().strftime('%Y%m%d')
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
 outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024'  # Directory Output Location
 
-# Variable defines if the AGOL Feature layers needs to be download, if 'No' then you are doing development and do not
+# Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updates in the 'ArcGIS_API.py' -
 # processFeatureLayer method when set to 'No'
 AGOLDownload = 'No'  # ('Yes'|'No')
