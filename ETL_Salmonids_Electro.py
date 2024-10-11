@@ -62,15 +62,18 @@ class etl_SalmonidsElectro:
             outDFMeasurements = etl_SalmonidsElectro.process_Measurements_Electrofishing(outDFDic, outDFEvent,
                                                                                         etlInstance, dmInstance)
             ######
-            # ETL Process Counts (combined Measurements and Tallied)
+            # ETL Process Counts (combined Measurements and Tallied) - Not populating the Summary data of Measurements
+            # and Tally data to 'tblSummerCounts' as of 10/10/2024.  Table 'tblSummerCounts' is really a summary table
+            # of the measurements table (measured and tally), this table is being set to legacy.
             ######
+            """
             outDFCounts = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements,
-                                                                             outDFPassWQ, etlInstance, dmInstance)
-
-            logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.info(logMsg)
-
+                                                                              outDFPassWQ, etlInstance, dmInstance)
+             
+             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
+             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+             logging.info(logMsg)
+            """
             outETL = "Success ETL Salmonids Electrofishing"
             return outETL
 
@@ -359,7 +362,6 @@ class etl_SalmonidsElectro:
             # Drop fields
             outDFPass.drop(columns={'GlobalID_y', 'GlobalID', 'Creator', 'ParentGlobalID'}, inplace=True)
 
-
             # Define CreatedDate to DateTime
             outDFPass['CreatedDate'] = pd.to_datetime(outDFPass['CreatedDate'], format='%m/%d/%Y %I:%M:%S %p',
                                                       errors='coerce')
@@ -399,8 +401,8 @@ class etl_SalmonidsElectro:
 
         """
         ETL routine for the Measurements form data in the Electrofishing Survey 123 form.
-        Data is processed to table 'tblSummerMeasurements'.  This is the data on which measurements were made.
-        By Event and Pass first ten 'COHO' occurrences are given a 'RandomSample' value of 'True', all other
+        Data is processed to table 'tblSummerMeasurements'.  This is the data on which measurements and Tally's were
+        made. By Event and Pass first ten 'COHO' occurrences are given a 'RandomSample' value of 'True', all other
         records by Event, Pass are given a 'RandomSample' value of 'False'
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
@@ -409,6 +411,9 @@ class etl_SalmonidsElectro:
         :param dmInstance: Data Management instance:
 
         :return:outDFMeasurements - Measurements dataframe appended to table 'tblSummerMeasurements
+
+        Updates:
+        20241011 - Removed criteria only Measurements records are being processed.  No both
         """
 
         try:
@@ -433,7 +438,7 @@ class etl_SalmonidsElectro:
                                         'CreationDate': 'CreatedDate'}, inplace=True)
 
             # Subset to only the 'Tally' = 'No' fields, that is records with measurements
-            outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
+            # outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
 
             # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
             outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
@@ -517,6 +522,10 @@ class etl_SalmonidsElectro:
     def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, outDFPassWQ, etlInstance, dmInstance):
 
         """
+        NOTE -  Not populating the Summary data of Measurements and Tally data to 'tblSummerCounts' as of 10/10/2024.
+        Table 'tblSummerCounts' is really a summary table of the measurements table (measured and tally), this table is
+        being set Legacy.
+
         ETL routine for the Count data in the Electrofishing Survey 123 form. Routine will calculate the data going to
         the 'tblSummerCount' table. This data is the total across Measured and Tallied data. Fish counts for each pass
         during electrofishing and snorkeling surveys. Count values per records are the combined measured and
@@ -989,8 +998,9 @@ def assignRandomSampleFirst10(group):
     :return:
     """
 
-    # Filter for rows where 'SpeciesCode' is 'CO'
-    co_mask = group['SpeciesCode'] == 'CO'
+    # Filter for rows where 'SpeciesCode' is 'CO' and Tally is False
+    #co_mask = group['SpeciesCode'] == 'CO'
+    co_mask = (group['SpeciesCode'] == 'CO') & (group['Tally'] == False)
     co_subset = group[co_mask]
 
     # Set 'RandomSample' to True for the first 10 'CO' records
