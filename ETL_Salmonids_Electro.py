@@ -257,6 +257,14 @@ class etl_SalmonidsElectro:
             for field in fieldList:
                 outDFSubset2wEventID[field] = outDFSubset2wEventID[field].replace(0, None)
 
+            # Convert Water Quality Fields to String with only two decimal places, thus only
+            # importing out to two significant digits - Added 10/21/2024
+            fieldList = ['Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance']
+            for field in fieldList:
+                outDFSubset2wEventID[field] = outDFSubset2wEventID[field].apply(lambda x: f"{x:.2f}")
+
+
+
             # Calibration pool is a Yes/No Boleen field, setting to 'True'/ 'False' (i.e. Boolean)
             outDFSubset2wEventID['CalibrationPool'] = outDFSubset2wEventID['CalibrationPool'].apply(
                 lambda x: True if x == 'Yes' else False)
