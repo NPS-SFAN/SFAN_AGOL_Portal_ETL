@@ -445,8 +445,8 @@ class etl_SalmonidsElectro:
                                         'FishWeight_g': 'FishWeight',
                                         'CreationDate': 'CreatedDate'}, inplace=True)
 
-            # Subset to only the 'Tally' = 'No' fields, that is records with measurements
-            # outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
+            ## Subset to only the 'Tally' = 'No' fields, that is records with measurements
+            ## outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
 
             # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
             outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
