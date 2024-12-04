@@ -13,7 +13,7 @@ ArcGISPro credentials with the native ArcGISPro python environment I'm not able 
 to download Feature Layers I own).   Conversely, when VPN connected at home the ArcGISPro credentials work fine.
 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
-
+As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.
 Output:
 
 Python Environment: SFAN_AGOLPortal_ETL - Python 3.9, clone of the ArcGISPro 3.2 environment to all for ArcPY
@@ -40,9 +40,9 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol Being Processes
-protocol = 'Salmonids-EFish'   #(SNPLPORE|Salmonids-EFish|...)
+protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids-EFish|...)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20241011.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20241204_WorkTest.accdb'
 
 # Year Being Processed
 inYear = 2024
@@ -51,7 +51,7 @@ inYear = 2024
 # AGOL/Portal Variables to define
 #################################
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "95a285484d4e4e7f97400e8373dc36bb"
+layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 # URL to the AGOL or Portal Path to be processed
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, Portal: https://gisportal.nps.gov/portal
 
@@ -67,7 +67,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2024'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2024'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updates in the 'ArcGIS_API.py' -
