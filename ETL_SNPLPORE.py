@@ -299,9 +299,10 @@ class etl_SNPLPORE:
                     break
 
             # Create initial dataframe subset
-            outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Time', "Males", "Female", "Unknown", "Hatchling",
-                                "Fledgling", "Eggs", "Nest ID", "Territory Behavior", "Nest Behavior", "Chicks Behavior",
-                                "Other Behavior", "Specify other.", "SNPL Notes", "Long", "Lat"]].rename(
+            outDFSubset = (inDF[['ParentGlobalID', 'GlobalID', 'Time', "Males", "Female", "Unknown", "Hatchling",
+                                "Fledgling", "Eggs", "Nest ID", "Territory Behavior", "Nest Behavior",
+                                 "Chicks Behavior", "Other Behavior", "Specify other.", "SNPL Notes", "Long", "Lat",
+                                 "SNPL Band Count"]].rename(
                 columns={'ParentGlobalID': 'Event_ID',
                          'GlobalID': 'SNPL_Data_ID',
                          'Time': 'SNPL_Time',
@@ -314,7 +315,8 @@ class etl_SNPLPORE:
                          'Nest ID': 'Nest_ID',
                          'SNPL Notes': 'SNPL_Notes',
                          'Long': 'X_Coord',
-                         'Lat': 'Y_Coord'})
+                         'Lat': 'Y_Coord',
+                         'SNPL Band Count': 'SNPL_Bands'}))
 
             ####################
             # Create a Master Nest ID if it doesn't already Exist - Nest_ID is a related table that must first be
@@ -356,6 +358,11 @@ class etl_SNPLPORE:
 
             outDFObs = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
+            # Manually converting SNPL_Bands to Integer.  Must convert to Float first when Nulls are present.
+            # Nulls are only present if 2024 because number of bands present was added half way through the field
+            # on the Survey 123 form.
+            outDFObs['SNPL_Bands'] = outDFObs['SNPL_Bands'].fillna(0).astype(float).astype(int)
+
             # Number_Eggs field - variable was added mid-season, setting all 'None' values converts above to 0.
             outDFObs['Number_Eggs'] = outDFObs['Number_Eggs'].fillna(0)
 
@@ -374,10 +381,15 @@ class etl_SNPLPORE:
 
             # Append outDFObs to 'tbl_SNPL_Observations'
             # Pass final Query to be appended
+            # insertQuery = (f'INSERT INTO tbl_SNPL_Observations (Event_ID, SNPL_Data_ID, SNPL_Time, SNPL_Male,'
+            #                f' SNPL_Female, SNPL_Unk, SNPL_Hatchlings, SNPL_FLedglings, Number_Eggs, Nest_ID, SNPL_Notes,'
+            #                f' X_Coord, Y_Coord, SNPL_Bands, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
+            #                f' ?, ?, ?, ?, ?, ?, ?)')
+
             insertQuery = (f'INSERT INTO tbl_SNPL_Observations (Event_ID, SNPL_Data_ID, SNPL_Time, SNPL_Male,'
                            f' SNPL_Female, SNPL_Unk, SNPL_Hatchlings, SNPL_FLedglings, Number_Eggs, Nest_ID, SNPL_Notes,'
-                           f' X_Coord, Y_Coord, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
-                           f' ?, ?, ?, ?, ?, ?)')
+                           f' X_Coord, Y_Coord, SNPL_Bands, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
+                           f' ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFObsOnly, "tbl_SNPL_Observations", insertQuery,
@@ -744,7 +756,6 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
         # Retain the first record by 'Nest_ID'
         outDFNestIDFirst = merged_df.drop_duplicates(subset=['Nest_ID'], keep='first')
-
 
         # Join to Check which 'Nest_ID, Year, and Location_ID composite primary key is not present Left join.
         # Pull the Nest Master table
