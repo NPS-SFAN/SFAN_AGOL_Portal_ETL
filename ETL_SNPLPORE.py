@@ -60,6 +60,16 @@ class etl_SNPLPORE:
             outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######
+            # Update Event Detail fields post creation of the Survey and Observation records - added 20241205
+            ######
+            outDFEvDetails = etl_SNPLPORE.process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs)
+
+            ######
+            # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
+            ######
+            outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
+
+            ######
             # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
             ######
             outDFBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
@@ -381,11 +391,6 @@ class etl_SNPLPORE:
 
             # Append outDFObs to 'tbl_SNPL_Observations'
             # Pass final Query to be appended
-            # insertQuery = (f'INSERT INTO tbl_SNPL_Observations (Event_ID, SNPL_Data_ID, SNPL_Time, SNPL_Male,'
-            #                f' SNPL_Female, SNPL_Unk, SNPL_Hatchlings, SNPL_FLedglings, Number_Eggs, Nest_ID, SNPL_Notes,'
-            #                f' X_Coord, Y_Coord, SNPL_Bands, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
-            #                f' ?, ?, ?, ?, ?, ?, ?)')
-
             insertQuery = (f'INSERT INTO tbl_SNPL_Observations (Event_ID, SNPL_Data_ID, SNPL_Time, SNPL_Male,'
                            f' SNPL_Female, SNPL_Unk, SNPL_Hatchlings, SNPL_FLedglings, Number_Eggs, Nest_ID, SNPL_Notes,'
                            f' X_Coord, Y_Coord, SNPL_Bands, Coord_Units, Coord_System, Datum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,'
@@ -415,6 +420,90 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+
+    def process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs):
+
+        """
+        For the Event Details table summarize the following fields by event Adults, Hatchlings, Fledglings, Banded.
+
+        Still need to add logic for entering the 'Checked Bands' field which wasn't part of the 2024 Survey.
+
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param outDFSurvey: Data frame output from the proces_Survey method.
+        :param outDFObs: Data Frame with the exported/imported Observation data.
+
+        :return:String noting Success or Failure
+        """
+
+        try:
+            #Merge Survey and Obs
+            outDFSurObs = pd.merge(outDFSurvey, outDFObs, on='Event_ID', how='inner')
+
+
+            surveyDF_Subset = outDFObs[['Event_ID', 'SNPL_Male', 'SNPL_Female', 'SNPL_Hatchlings', 'SNPL_Fledglings',
+                                        'SNPL_Bands']]
+
+
+            # Group by 'Event_ID' and sum the numerical columns
+            grouped_df = surveyDF_Subset.groupby('Event_ID', as_index=False).sum()
+
+
+
+            # Add a new column 'Adults' by summing the 'SNPL_Male' and 'SNPL_Female' columns
+            grouped_df['Adults'] = grouped_df['SNPL_Male'] + grouped_df['SNPL_Female']
+
+            #Update Query
+            update_df = grouped_df[['Event_ID', 'Adults', 'SNPL_Hatchlings', 'SNPL_Fledglings', 'SNPL_Bands']].rename(
+                columns={'Adults': 'SNPL_Adults', 'SNPL_Bands': 'SNPL_Banded'})
+
+            # Connect to the Access DB
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+
+            # Create a cursor object
+            cursor = cnxn.cursor()
+
+            # Iterate over the DataFrame and update the Access table
+            for row in update_df.iterrows():
+                # Prepare the SQL update query
+                sql = f"""
+                UPDATE tbl_Event_Details
+                SET 
+                    SNPL_Adults = ?,
+                    SNPL_Hatchlings = ?,
+                    SNPL_Fledglings = ?,
+                    SNPL_Banded = ?
+                WHERE Event_ID = ?
+                """
+                AdultVal = row[1][1]
+                HatchVal = row[1][2]
+                FledglingVal = row[1][3]
+                BandedVal = row[1][4]
+                EventVal = row[1][0]
+                cursor.execute(sql, AdultVal, HatchVal, FledglingVal,
+                               BandedVal, EventVal)
+
+            # Commit the changes
+            cnxn.commit()
+
+            # Close the connection
+            cursor.close()
+            cnxn.close()
+
+            logMsg = f"Success ETL_SNPLPORE.py - process_EventDetails."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return "Success"
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Observations: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
 
     def process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs):
 
