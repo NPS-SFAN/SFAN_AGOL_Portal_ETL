@@ -10,10 +10,6 @@ import logging
 import ETL_SNPLPORE as SNPLP
 import ETL_Salmonids_Electro as SEfish
 import ETL_PCM_LocationsManualParking as PCMLOC
-import log_config
-
-
-logger = logging.getLogger(__name__)
 
 class etlInstance:
     # Class Variables
@@ -77,7 +73,7 @@ class etlInstance:
                 outETL = SEfish.etl_SalmonidsElectro.process_ETLElectro(outDFDic, etlInstance, dmInstance)
 
             elif etlInstance.protocol == 'PCM-LocationsManual':
-                outETL = PCMLOC.etl_PCMLocations.process_PCMLocManual(etlInstance, dmInstance)
+                outETL = PCMLOC.etl_PCMLocations.process_PCMLocManual(etlInstance, dmInstance, generalArcGIS)
 
             else:
                 logMsg = f"WARNING Protocol Specific Instance - {etlInstance.protocol} - has not been defined."
