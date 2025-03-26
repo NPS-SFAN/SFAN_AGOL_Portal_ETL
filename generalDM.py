@@ -14,8 +14,6 @@ import psutil
 from zipfile import ZipFile
 import glob
 
-logger = logging.getLogger(__name__)
-
 class generalDMClass:
 
     dateNow = datetime.now().strftime('%Y%m%d')
