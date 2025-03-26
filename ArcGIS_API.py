@@ -8,10 +8,6 @@ import generalDM as dm
 import logging
 import arcgis
 from arcgis.gis import GIS
-import log_config
-
-logger = logging.getLogger(__name__)
-
 
 class generalArcGIS:
 
@@ -40,7 +36,7 @@ class generalArcGIS:
 
     def processFeatureLayer(generalArcGIS, etlInstance, dmInstance):
         """
-        Workflow for processing of the passed AGOL/Portal ID
+        Workflow for processing/Pulling from AGOL/Portal the passed AGOL/Portal ID
 
         :param generalArcGIS: ArcGIS instance
         :param etlInstance: ETL processing instance
@@ -146,6 +142,56 @@ def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
         traceback.print_exc(file=sys.stdout)
 
 
+def loadDataFrameToFeatureLayer(inDF, inDic, outGIS, etlPCMInstance):
+    """
+    Load the passed dataframe as a Feature_Layer to the defined AGOL/Portal Group. as the defined Feature
+
+    :param inDF: Dataframe being processed
+    :param inDic: Dictionary defining the Feature Layer Properties being pushed
+    :param outGIS: GIS Connection to AGOL/Portal
+    :param etlPCMInstance: ETL PCM Instance - use to define output folder and other info as needed
+
+    :return: Return String denoting success or failure.
+    """
+
+    try:
+
+        # Create the Feature Layer item
+        feature_layer_item = outGIS.content.import_data(inDF, folder=etlPCMInstance.Folder)
+        feature_layer_item.update(inDic)
+
+        print(feature_layer_item.title)
+        print(feature_layer_item.description)
+        print(feature_layer_item.tags)
+
+        #####################################
+        # Define the Group to be shared with.
+        #####################################
+        # Get the Group ID via the Group Name
+        group_search = outGIS.groups.search(etlPCMInstance.PortalTeam)
+        if group_search:
+            group_id = group_search[0].id  # Get the first matching group ID
+
+            # Share theFeature Layer with the Group
+            feature_layer_item.share(groups=[group_id])
+            logMsg = f'Shared {group_search[0].title} with - {etlPCMInstance.PortalTeam}'
+            logging.info(logMsg)
+
+        else:
+            logMsg = f'WARNING Group {etlPCMInstance.PortalTeam} - not found.'
+            logging.warning(logMsg)
+
+        logMsg = f'Successfully Created Feature Layer Created: {feature_layer_item.itemid}'
+        logging.info(logMsg)
+        traceback.print_exc(file=sys.stdout)
+        return f'Successfully processed - {feature_layer_item.title}'
+
+    except Exception as e:
+
+        logMsg = f'ERROR - "Exiting Error loadDataFrameToFeatureLayer - ArcGIS_API.py: {e}'
+        logging.critical(logMsg)
+        traceback.print_exc(file=sys.stdout)
+
 
 def connectAGOL_ArcGIS(generalArcGIS, dmInstance):
     """
@@ -207,3 +253,5 @@ def connectAGOL_clientID(generalArcGIS, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
