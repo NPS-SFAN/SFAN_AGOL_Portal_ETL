@@ -51,6 +51,13 @@ class etl_PCMLocations:
 
         try:
 
+            # Create the ETL PMCLocations Instance
+            etlPCMInstance = etl_PCMLocations()
+
+            # Import the 'qrpt_PlotLocationsManual' summary query routine to DataFrame
+            inQuery = f'SELECT {etlPCMInstance.QueryToSummarize}.* FROM {etlPCMInstance.QueryToSummarize};'
+
+            outDFPCm = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             logMsg = f"Success process_PCMLocManual.py - process_ETLSNPLPORE."
             logging.info(logMsg)
