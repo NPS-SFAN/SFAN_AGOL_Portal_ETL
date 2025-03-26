@@ -8,12 +8,9 @@ import pandas as pd
 import numpy as np
 import glob, os, sys
 import traceback
-import ETL as ETL
 import generalDM as dm
 import logging
-import log_config
 
-logger = logging.getLogger(__name__)
 
 class etl_SNPLPORE:
     def __init__(self):
