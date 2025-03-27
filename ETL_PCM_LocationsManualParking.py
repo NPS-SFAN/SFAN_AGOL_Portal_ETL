@@ -1,9 +1,15 @@
 """
 ETL_PCM_LocationsManualParking.py
 ETL workflow pulling the Locations Manual/Parking information from the PCM Frontend Database and exporting (i.e. ETL) as
-two Feature Layers on NPS Portal.
+two Feature Layers to the AGOL/Portal.
 
 This is an ETL from Access to GIS Feature Layers on Portal.
+
+Created By:
+Kirk Sherrill Data Scientist San Francisco Bay Area Network
+
+Date Created:
+March 2025
 """
 # Import Required Dependices
 import pandas as pd
@@ -14,7 +20,6 @@ import ArcGIS_API as agl
 from arcgis.features import GeoAccessor
 
 import logging
-
 
 # Set option in pandas to not allow chaining (views) of dataframes, instead force copy to be performed.
 pd.options.mode.copy_on_write = True
@@ -101,10 +106,14 @@ class etl_PCMLocations:
             yearValue = etlInstance.yearLU
 
             inDic = {"title": f"SFAN_PCM_Plot_Locations_Manual_{yearValue}",
-                     "tags": "San Francisco Bay Area Network, Plant Communities Monitoring",
+                     "tags": "San Francisco Bay Area Network, Plant Communities Monitoring, Plot Manuals",
                      "type": "Feature Service",
                      "description": f"PCM Plot Locations Manual Info Feature Layer to be used for PCM Field Maps"
-                                    f" Navigation {yearValue}"}
+                                    f" Navigation {yearValue}",
+                     "snippet": f"Feature Layer with PCM Plot Locations Manual Info to be used for PCM Field Maps"
+                                    f" Navigation {yearValue}",
+                     "licenseInfo": "This dataset is for internal use only and should not be distributed without "
+                                    "permission."}
 
             # Connect to the Cloud via passed credentials workflow
             if generalArcGIS.credentials.lower() == 'oauth':
@@ -117,6 +126,16 @@ class etl_PCMLocations:
             logging.info(outFun)
 
             # Push Parking DataFrame
+            inDic = {"title": f"SFAN_PCM_Plot_Locations_Parking_{yearValue}",
+                     "tags": "San Francisco Bay Area Network, Plant Communities Monitoring, Plot Parking",
+                     "type": "Feature Service",
+                     "description": f"PCM Plot Locations Parking Info Feature Layer to be used for PCM Field Maps"
+                                    f" Navigation {yearValue}",
+                     "snippet": f"Feature Layer with PCM Plot Parking Info to be used for PCM Field Maps"
+                                f" Navigation {yearValue}",
+                     "licenseInfo": "This dataset is for internal use only and should not be distributed without "
+                                    "permission."}
+
             outFun = agl.loadDataFrameToFeatureLayer(DFParking_SDF, inDic, outGIS, etlPCMInstance)
             logging.info(outFun)
 
