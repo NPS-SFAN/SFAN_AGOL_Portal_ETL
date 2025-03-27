@@ -155,6 +155,13 @@ def loadDataFrameToFeatureLayer(inDF, inDic, outGIS, etlPCMInstance):
     """
 
     try:
+        # Check if Feature Layer Exists, if yes delete
+        featureLayerName = inDic.get("title")
+        existing_items = outGIS.content.search(f'title:"{featureLayerName}"', item_type="Feature Layer")
+        for item in existing_items:
+            item.delete()  # Delete old layers
+            logMsg = f'Deleted existing Feature Layer - {featureLayerName}'
+            logging.info(logMsg)
 
         # Create the Feature Layer item
         feature_layer_item = outGIS.content.import_data(inDF, folder=etlPCMInstance.Folder)
@@ -181,10 +188,28 @@ def loadDataFrameToFeatureLayer(inDF, inDic, outGIS, etlPCMInstance):
             logMsg = f'WARNING Group {etlPCMInstance.PortalTeam} - not found.'
             logging.warning(logMsg)
 
-        logMsg = f'Successfully Created Feature Layer Created: {feature_layer_item.itemid}'
+        #####################################
+        # Rename the first Layer name to the title (assuming we are creating single feature (i.e. point, line) feature
+        # layers.
+        #####################################
+        if feature_layer_item.layers:
+            point_layer = feature_layer_item.layers[0]  # Get the first (child) layer
+            new_layer_name = featureLayerName  # Define the new name
+
+            update_params = {
+                "name": new_layer_name
+            }
+
+            point_layer.manager.update_definition(update_params)  # Apply the name change
+
+            print(f"Child Point Layer Renamed to: {new_layer_name}")
+        else:
+            print("No child layers found in the Feature Layer.")
+
+        logMsg = f'Successfully Created Feature Layer: {feature_layer_item.title}'
         logging.info(logMsg)
         traceback.print_exc(file=sys.stdout)
-        return f'Successfully processed - {feature_layer_item.title}'
+        return logMsg
 
     except Exception as e:
 
