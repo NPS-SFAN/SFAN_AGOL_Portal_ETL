@@ -54,10 +54,11 @@ inYear = 2025
 #################################
 # AGOL/Portal Variables to define
 #################################
-# Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 # URL to the AGOL or Portal Path to be processed
 cloudPath = f"https://geospatial.nps.gov/portal"   #AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
+
+# Feature Layer ID on ArcGIS OnLine or Portal to be ETL
+layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
