@@ -14,7 +14,7 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.
-As of 3/25/2025 - PCM ETL of Location Manual Information to Portal is in process - KRS
+As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
 
 Output:
 
