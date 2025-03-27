@@ -1,13 +1,13 @@
-# SFAN_AGOL_ETL
-San Francisco Bay Area Network AGOL Extract Transform and Load Routines for Survey 123 and Arc Field Maps.  
+# SFAN_AGOL_Portal ETL
+San Francisco Bay Area Network AGOL and Portal Extract Transform and Load routines.  
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.\
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.\
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal is developed - KRS
 
-## SFAN_AGOL_ETL.py
+## SFAN_AGOL_Portal_ETL.py
 Parent SFAN ArcGIS Online (AGOL) and Portal Extract, Transform and Load (ETL) script.  From parent script routines are
 defined by protocl for ETL of passed feature layers (e.g. Survey 123 or Arc Field Maps) to the respective protocol
-database and table schema locations.
+database and table schema locations.  Processing can also be for ETL from databases to the AGOL/Portal platforms.
 
 Workflow can be accomplished connecting to AGOL/Portal via an OAuth 2.0. Conversely if you have ArcGISPro installed you
 can connect via the 'Pro' python environment installed on your computer, which will use your windows/active directory
@@ -28,3 +28,10 @@ General Data Management workflow related methods.
 
 ## ETL_SNPLPORE.py
 Methods/Functions to be used for Snowy Plover PORE ETL workflow.
+
+## ETL_PCM_LocationsManualParking.py
+ETL workflow pulling the Locations Manual/Parking information from the PCM Frontend Database and exporting (i.e. ETL) as
+two Feature Layers to the AGOL/Portal.
+
+## ETL_Salmonids_Electro.py
+Methods/Functions to be used for Salmonids Electrofishing ETL workflow.
