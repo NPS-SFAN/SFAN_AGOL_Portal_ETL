@@ -1,6 +1,6 @@
 """
-SFAN_AGOL_ETL.py
-Parent SFAN ArcGIS Online (AGOL) and Portal Extract, Transform and Load (ETL) script.  From parent script routines are
+SFAN_AGOL_Portal_ETL.py
+Parent SFAN ArcGIS Online (AGOL) and NPS Portal Extract, Transform and Load (ETL) script.  From parent script routines are
 defined by protocl for ETL of passed feature layers (e.g. Survey 123 or Arc Field Maps) to the respective protocol
 database and table schema locations.
 
