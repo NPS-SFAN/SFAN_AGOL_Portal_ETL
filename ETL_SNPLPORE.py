@@ -67,11 +67,6 @@ class etl_SNPLPORE:
             outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
-            # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
-            ######
-            outDFBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
-
-            ######
             # Process Predator
             ######
             outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
