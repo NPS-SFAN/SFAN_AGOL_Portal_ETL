@@ -792,10 +792,19 @@ class etl_SNPLPORE:
             # Change ACT values 'other' to 'O'
             outDFPredator['ACT'] = outDFPredator['ACT'].replace('other', 'O')
 
+
+            # Add  Coord_Units = 'degree', Coord_System = 'GCS', and Datum = 'WGS84' fields
+            # Remove default UTM values in the Predator Survey table defining with GCS Survey 123 default values
+            outDFPredator['Coord_Units'] = 'degree'
+            outDFPredator['Coord_System'] = 'GCS'
+            outDFPredator['Datum'] = 'WGS84'
+
+
             # Pass query to be appended
             insertQuery = (f'INSERT INTO tbl_Predator_Survey (Event_ID, Predator_Data_ID, Predator_Type_ID,'
                            f' Predator_Type_Other, GroupSize, BinNumber, ACT, ACT_Other, Flight, Predator_Notes,'
-                           f' X_Coord, Y_Coord) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                           f' X_Coord, Y_Coord, Coord_Units, Coord_System, Datum) VALUES'
+                           f' (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFPredator, "tbl_Predator_Survey", insertQuery,
