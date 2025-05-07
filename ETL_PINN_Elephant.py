@@ -50,11 +50,10 @@ class etl_PINNElephant:
 
         try:
 
-
             ######
             # Process Survey Metadata Form
             ######
-            outDFSurvey = etl_SNPLPORE.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
+            outDFSurvey = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
 
 
 
@@ -91,19 +90,17 @@ class etl_PINNElephant:
             #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
             inDF = None
             for key, df in outDFDic.items():
-                if 'Survey' in key:
+                if 'ElephantSeal' in key:
                     inDF = df
                     break
 
-            # Create initial dataframe subset
-            outDFSubset = inDF[['GlobalID', 'Survey Location', "SurveyDate", "Time Start Survey", "Time End Survey",
-                            "CreationDate", "Creator"]].rename(
-                columns={'GlobalID': 'Event_ID',
-                         'SurveyDate': 'Start_Date',
-                         'Time Start Survey': 'Start_Time',
-                         'Time End Survey': 'End_Time',
-                         'CreationDate': 'Created_Date',
-                         'Creator': 'Created_By'})
+            # Create initial dataframe subset - STOPPED HERE 20250507 KRS
+            outDFSubset = inDF[['GlobalID', 'Survey Name', "ProjectType", "Park Code", "Season", "Survey Date", "Start Time Survey", "End Time Survey", "CreationDate", "Creator"]].rename(
+                columns={'Project_Type': 'ProjectCode',
+                         'Park Code': 'ParkCode',
+                         'Survey Date': 'StartDate',
+                         'Start Time Survey': 'StartTime',
+                         'End Time Survey': 'EndTime'})
 
             ##############################
             # Numerous Field CleanUp Steps
