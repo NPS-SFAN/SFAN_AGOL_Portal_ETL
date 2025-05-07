@@ -10,6 +10,7 @@ import logging
 import ETL_SNPLPORE as SNPLP
 import ETL_Salmonids_Electro as SEfish
 import ETL_PCM_LocationsManualParking as PCMLOC
+import ELT_PINN_Elephant as PElephant
 
 class etlInstance:
     # Class Variables
@@ -61,16 +62,22 @@ class etlInstance:
             logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
             # Create the protocol specific ETL instance
+            # ETL Routine Snowy Plover PORE
             if etlInstance.protocol == 'SNPLPORE':
                 # Pull the Feature Layer for the defined return as dataframe(s) in list variable outDFList
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
-
                 outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance)
 
+            # ETL Routine Salmonids Electrofishing
             elif etlInstance.protocol == 'Salmonids-EFish':
                 # Pull the Feature Layer for the defined return as dataframe(s) in list variable outDFList
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
                 outETL = SEfish.etl_SalmonidsElectro.process_ETLElectro(outDFDic, etlInstance, dmInstance)
+
+            # ETL Routine Pinnipeds Elephant Seal
+            elif etlInstance.protocol == 'PINN-Elephant':
+                outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
+                outETL = PElephant.process_PINNElephant(outDFDic, etlInstance, dmInstance)
 
             elif etlInstance.protocol == 'PCM-LocationsManual':
                 outETL = PCMLOC.etl_PCMLocations.process_PCMLocManual(etlInstance, dmInstance, generalArcGIS)
