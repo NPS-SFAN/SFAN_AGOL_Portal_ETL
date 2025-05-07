@@ -1,6 +1,10 @@
 """
 ETL_PINN_Elephant.py
 Methods/Functions to be used for Pinnipeds Elephant Seal ETL workflow.
+
+Created: 5/7/2025
+Created By: Kirk Sherrill SFAN Data Scientist
+Updates:
 """
 
 #Import Required Libraries
@@ -24,6 +28,9 @@ class etl_PINNElephant:
         # Class Variables
 
         numETL_PINNElephant = 0
+
+        # Define Instance Variables
+        # self.filterRecQuery = 'qsel_QA_Control'
 
         # Define Instance Variables
         numETL_PINNElephant += 1
