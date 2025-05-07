@@ -15,6 +15,7 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
+As of 5/x/2025 - Pinnipeds Elephant Seal ETL workflow in process
 
 Output:
 
@@ -42,8 +43,8 @@ import log_config
 # Get the logger
 logger = logging.getLogger(__name__)
 
-# Protocol Being Processes
-protocol = 'SNPLPORE'   #(SNPLPORE|Salmonids-EFish|PCM-LocationsManual)
+# Protocol/Item Being Processes
+protocol = 'PINN-Elephant'   #(SNPLPORE|Salmonids-EFish|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
 inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20250425.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\PORE_SNPL_FrontEnd_20250425.accdb'
@@ -73,7 +74,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2025'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2025'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updates in the 'ArcGIS_API.py' -
