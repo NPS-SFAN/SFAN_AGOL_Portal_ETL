@@ -10,7 +10,7 @@ import logging
 import ETL_SNPLPORE as SNPLP
 import ETL_Salmonids_Electro as SEfish
 import ETL_PCM_LocationsManualParking as PCMLOC
-import ELT_PINN_Elephant as PElephant
+import ETL_PINN_Elephant as PElephant
 
 class etlInstance:
     # Class Variables
