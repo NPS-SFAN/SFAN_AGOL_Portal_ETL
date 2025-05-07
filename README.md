@@ -26,6 +26,7 @@ Methods for working within AGOL/Portal and the ArcGIS API.
 ## generalDM.py
 General Data Management workflow related methods.
 
+# Scripts from AGOL/Portal to Databases (e.g. Survey 123 to Databases)
 ## ETL_SNPLPORE.py
 Methods/Functions to be used for Snowy Plover PORE ETL workflow.
 
@@ -35,3 +36,11 @@ two Feature Layers to the AGOL/Portal.
 
 ## ETL_Salmonids_Electro.py
 Methods/Functions to be used for Salmonids Electrofishing ETL workflow.
+
+## ETL_PINN_Elephant.py
+Methods/Functions to be used for Pinnipeds Elephant Seal ETL workflow.
+
+# Scripts from Databases to AGOL/Portal
+## ETL_PCM_LocationsManualParking.py
+ETL workflow pulling the Locations Manual/Parking information from the Plan Communities Frontend Database and exporting (i.e. ETL) as
+two Feature Layers to AGOL/Portal.  Workflow going from Access Database to AGOL/Portal.
