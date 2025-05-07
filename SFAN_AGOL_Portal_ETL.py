@@ -59,7 +59,7 @@ inYear = 2025
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "d4e2ab1f95704d98b4174a5ba811ba80"
+layerID = "a9003e73a4d847e8b18e64a7a0b9eea9"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
