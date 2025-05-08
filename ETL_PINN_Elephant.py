@@ -95,13 +95,24 @@ class etl_PINNElephant:
                     break
 
             # Create initial dataframe subset - STOPPED HERE 20250507 KRS
-            outDFSubset = inDF[['GlobalID', 'Survey Name', "ProjectType", "Park Code", "Season", "Survey Date", "Start Time Survey", "End Time Survey", "CreationDate", "Creator"]].rename(
+            outDFSubset = inDF[['GlobalID', 'Survey Name', "ProjectType", "Park Code", "Season", "Survey Date",
+                                "Start Time Survey", "End Time Survey", "Define Observer(s)", "Specify other.",
+                                "Visibility", "Survey Type", "Sub Sites Not Surveyed", "Regional Survey",
+                                "Regional Survey Code"]].rename(
                 columns={'Project_Type': 'ProjectCode',
                          'Park Code': 'ParkCode',
+                         'Project Type': 'ProjectCode',
                          'Survey Date': 'StartDate',
                          'Start Time Survey': 'StartTime',
-                         'End Time Survey': 'EndTime'})
-
+                         'End Time Survey': 'EndTime',
+                         'Define Observer(s)': 'Observers',
+                         'Specify other.': 'ObserversOther',
+                         'Survey Type': 'SurveyType',
+                         'Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
+                         'Regional Survey': 'RegionalSurvey',
+                         'Regional Survey Code': 'RegionalSurveyCode',
+                         })
+            # STOPPED HERE 5/8/2025 KRS
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
