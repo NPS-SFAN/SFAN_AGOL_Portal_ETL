@@ -98,11 +98,11 @@ class etl_PINNElephant:
                     break
 
 
-            outDFSubset = inDF[['GlobalID', 'Survey Name', "ProjectType", "Park Code", "Season", "Survey Date",
+            outDFSubset = inDF[['GlobalID', 'Survey Name', "Project Type", "Park Code", "Season", "Survey Date",
                                 "Start Time Survey", "End Time Survey", "Define Observer(s)", "Specify other.",
-                                "Visibility", "Survey Type", "subsite_notsurveyed_sm", "Regional Survey",
+                                "Visibility", "Survey Type", "Sub Sites Not Surveyed", "Regional Survey",
                                 "Regional Survey Code", "Event Comment", "Collection Device", "CreationDate",
-                                "Creator", "subsite_notsurveyed_sm"]].rename(
+                                "Creator"]].rename(
                 columns={'Project_Type': 'ProjectCode',
                          'Park Code': 'ParkCode',
                          'Project Type': 'ProjectCode',
@@ -112,7 +112,7 @@ class etl_PINNElephant:
                          'Define Observer(s)': 'Observers',
                          'Specify other.': 'ObserversOther',
                          'Survey Type': 'SurveyType',
-                         'subsite_notsurveyed_sm': 'SubSitesNotSurveyed',
+                         '"Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
                          'Regional Survey': 'RegionalSurvey',
                          'Regional Survey Code': 'RegionalSurveyCode',
                          'Event Comment': 'Comments',
@@ -124,10 +124,9 @@ class etl_PINNElephant:
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
-            # To DateTime Field
-            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate'])
+
             # Convert to date only
-            outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
+            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.strftime('%m/%d/%y')
 
             # Data Processing Level Fields for Event Table
             # Get Dataframe Length
@@ -145,7 +144,7 @@ class etl_PINNElephant:
             outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
 
             ############################
-            # Subset to the Event Fields
+            # Subset to the Event Fields - STOPPED HERE 5/9/2025
             ############################
 
             outDFEvent = outDFSubset[['GlobalID', "ProjectCode", "StartDate", "StartTime", "EndTime", "CreatedDate",
