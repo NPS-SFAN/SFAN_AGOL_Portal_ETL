@@ -55,7 +55,10 @@ class etl_PINNElephant:
             ######
             outDFSurvey = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
 
-
+            ######
+            # Process Observations Form
+            ######
+            # outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
 
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
@@ -94,11 +97,12 @@ class etl_PINNElephant:
                     inDF = df
                     break
 
-            # Create initial dataframe subset - STOPPED HERE 20250507 KRS
+
             outDFSubset = inDF[['GlobalID', 'Survey Name', "ProjectType", "Park Code", "Season", "Survey Date",
                                 "Start Time Survey", "End Time Survey", "Define Observer(s)", "Specify other.",
-                                "Visibility", "Survey Type", "Sub Sites Not Surveyed", "Regional Survey",
-                                "Regional Survey Code"]].rename(
+                                "Visibility", "Survey Type", "subsite_notsurveyed_sm", "Regional Survey",
+                                "Regional Survey Code", "Event Comment", "Collection Device", "CreationDate",
+                                "Creator", "subsite_notsurveyed_sm"]].rename(
                 columns={'Project_Type': 'ProjectCode',
                          'Park Code': 'ParkCode',
                          'Project Type': 'ProjectCode',
@@ -108,26 +112,27 @@ class etl_PINNElephant:
                          'Define Observer(s)': 'Observers',
                          'Specify other.': 'ObserversOther',
                          'Survey Type': 'SurveyType',
-                         'Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
+                         'subsite_notsurveyed_sm': 'SubSitesNotSurveyed',
                          'Regional Survey': 'RegionalSurvey',
                          'Regional Survey Code': 'RegionalSurveyCode',
-                         })
-            # STOPPED HERE 5/8/2025 KRS
+                         'Event Comment': 'Comments',
+                         'Collection Device': 'CollectionDeviceID',
+                         'Specify other..1': 'DefineOthersCollection',
+                         'CreationDate': 'CreatedDate',
+                         'Creator': 'CreatedBy'})
+
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
-            #To DateTime Field
-            outDFSubset['Start_Date'] = pd.to_datetime(outDFSubset['Start_Date'])
-            # Format to m/d/yyy
-            outDFSubset['Start_Date'] = outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
+            # To DateTime Field
+            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate'])
+            # Convert to date only
+            outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
 
-            # Insert 'Location_ID' field
-            outDFSubset.insert(1, "Location_ID", None)
-
-            # Insert 'Protocol_Name' field
-            outDFSubset.insert(2, "Protocol_Name", "PORE SNPL")
-
+            # Data Processing Level Fields for Event Table
+            # Get Dataframe Length
             fieldLen = outDFSubset.shape[1]
+
             # Insert 'DataProcesingLevelID' = 1
             outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
 
@@ -139,42 +144,44 @@ class etl_PINNElephant:
             # Insert 'dataProcesingLevelUser
             outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
 
-            #####################################
-            # Define Location_Id via lookup table
-            #####################################
-
-            # Read in the Lookup Table
-            inQuery = f"Select * FROM tbl_Locations';"
-
-            outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
-            # Perform the lookup to field 'Location_ID'
-            outDF_Step2 = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLookup,
-                                                                 "Loc_Name", "Location_ID",
-                                                                 outDFSubset, "Survey Location",
-                                                                 "Location_ID")
-
-            # Drop field "Survey Location
-            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location'])
-
-
             ############################
+            # Subset to the Event Fields
+            ############################
+
+            outDFEvent = outDFSubset[['GlobalID', "ProjectCode", "StartDate", "StartTime", "EndTime", "CreatedDate",
+                                      "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
+                                      "DataProcessingLevelUser"]]
+
             # Define desired field types
-            ############################
-
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ["Event_ID", "Location_ID", "Protocol_Name", "Start_Date", "Start_Time", "End_Time",
-                                    "Created_Date", "Created_By", "DataProcessingLevelID", "DataProcessingLevelDate",
-                                    "DataProcessingLevelUser"],
-                             'Type': ["object", "object", "object", "datetime64", "datetime64", "datetime64",
-                                    "datetime64", "object", "int64", "DataProcessingLevelDate",
-                                    "object"],
-                            'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "%H:%M", "%H:%M",
-                                    "%m/%d/%Y %I:%M:%S %p", "na", "na", "na",
-                                    "na"]}
+            fieldTypeDic = {'Field': ["GlobalID", "ProjectCode", "StartDate", "StartTime", "EndTime", "CreatedDate",
+                                "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate", "DataProcessingLevelUser"],
+                             'Type': ["object", "object", "datetime64", "datetime64", "datetime64", "datetime64",
+                                      "object", "object", "datetime64", "object"],
+                            'DateTimeFormat': ["na", "na", "%m/%d/%Y", "%H:%M", "%H:%M", "%m/%d/%Y %I:%M:%S %p", "na",
+                                               "na", "%m/%d/%Y %H:%M:%S", "na"]}
 
             outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
+
+            ###########################
+            # STOPPED HERE 5/9/2025 KRS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
