@@ -126,7 +126,18 @@ class etl_PINNElephant:
             ##############################
 
             # Convert to date only
-            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.strftime('%m/%d/%y')
+            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.normalize()
+
+            # Copy StartDate to EndDate
+            outDFSubset['EndDate'] = outDFSubset['StartDate']
+
+            # Reorder columns to place EndDate right after StartDate
+            cols = list(outDFSubset.columns)
+            start_idx = cols.index('StartDate')
+            # Move 'EndDate' to right after 'StartDate'
+            cols.insert(start_idx + 1, cols.pop(cols.index('EndDate')))
+            outDFSubset = outDFSubset[cols]
+
 
             # Data Processing Level Fields for Event Table
             # Get Dataframe Length
@@ -143,54 +154,44 @@ class etl_PINNElephant:
             # Insert 'dataProcesingLevelUser
             outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
 
+            # Insert 'Project' field
+            outDFSubset.insert(fieldLen + 3, "Project", "Pinniped")
+
+            # Insert 'ProtcolID' field
+            outDFSubset.insert(fieldLen + 4, "ProtocolID", "4")
+
             ############################
-            # Subset to the Event Fields - STOPPED HERE 5/9/2025
+            # Subset to the Event Fields
             ############################
 
-            outDFEvent = outDFSubset[['GlobalID', "ProjectCode", "StartDate", "StartTime", "EndTime", "CreatedDate",
-                                      "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
-                                      "DataProcessingLevelUser"]]
+            outDFEvent = outDFSubset[['GlobalID', "ProjectCode", "StartDate", "EndDate", "StartTime", "EndTime",
+                                      "CreatedDate", "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
+                                      "DataProcessingLevelUser", "Project", "ProtocolID"]]
 
             # Define desired field types
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ["GlobalID", "ProjectCode", "StartDate", "StartTime", "EndTime", "CreatedDate",
-                                "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate", "DataProcessingLevelUser"],
+            fieldTypeDic = {'Field': ["GlobalID", "ProjectCode", "StartDate", "EndDate", "StartTime", "EndTime",
+                                      "CreatedDate", "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
+                                      "DataProcessingLevelUser", "Project", "ProtocolID"],
                              'Type': ["object", "object", "datetime64", "datetime64", "datetime64", "datetime64",
-                                      "object", "object", "datetime64", "object"],
-                            'DateTimeFormat': ["na", "na", "%m/%d/%Y", "%H:%M", "%H:%M", "%m/%d/%Y %I:%M:%S %p", "na",
-                                               "na", "%m/%d/%Y %H:%M:%S", "na"]}
+                                      "datetime64", "object", "object", "datetime64", "object", "object", "object"],
+                            'DateTimeFormat': ["na", "na", "%m/%d/%Y", "%m/%d/%Y", "%H:%M", "%H:%M",
+                                               "%m/%d/%Y %I:%M:%S %p", "na", "na", "%m/%d/%Y %H:%M:%S", "na", "na", "na"
+                                               ]}
 
-            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
-
-            ###########################
-            # STOPPED HERE 5/9/2025 KRS
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFEvent)
 
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tbl_Events (Event_ID, Location_ID, Protocol_Name, Start_Date, Start_Time, '
-                           f'End_Time, Created_Date, Created_By, DataProcessingLevelID, DataProcessingLevelDate, '
-                           f'DataProcessingLevelUser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            insertQuery = (f'INSERT INTO tblEvents (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
+                           f'CreatedDate, CreatedBy, DataProcessingLevelID, DataProcessingLevelDate, '
+                           f'DataProcessingLevelUser, Project, ProtocolID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+                           f'?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
-                                                        dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery, dmInstance)
 
             ##################
             # Define Observers -  table xref_EventContacts
@@ -275,3 +276,136 @@ class etl_PINNElephant:
             traceback.print_exc(file=sys.stdout)
 
 
+def processElephantContacts(inDF, etlInstance, dmInstance):
+    """
+    Define Observers in Pinnipeds table tblEventObservers
+    Harvest Multi-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
+    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return:
+    """
+
+    try:
+
+        inDFContacts = inDF[['GlobalID', 'Define Observer(s)', 'Specify other.']].rename(
+                    columns={'GlobalID': 'Event_ID',
+                             'Define Observer(s)': 'Observers',
+                             'Specify other.': 'Other'})
+
+        #####################################
+        # Parse the 'Observers' field on ','
+        # First remove the records where Observers == 'other'
+        inObsNotOther = inDFContacts[inDFContacts['Observers'] != 'other']
+        inDFObserversParsed = inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(',')).explode('Observers')
+        # Drop any records with 'Other' some cases have defined people and then also other
+        inDFObserversParsed2 = inDFObserversParsed[inDFObserversParsed['Observers'] != 'other']
+        # Drop field 'other'
+        inDFObserversParsed3 = inDFObserversParsed2.drop(['Other'], axis=1)
+        # Reset Index
+        inDFObserversParsed3.reset_index(drop=True)
+
+        # Trim leading white spaces in the 'Observers' field
+        inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
+
+
+        ##################################
+        # Parse the 'Other' field on ','
+        # Retain only the records where Observers contains 'other'
+        inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('other')]
+        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
+        inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
+
+        # Reset Index
+        inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+
+        # Trim leading white spaces in the 'Observers' field
+        inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+
+        ##################################
+        # Combine both parsed dataframes for fields Observers and Others
+        dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+
+        # Define First and Last Name Fields
+        dfObserversOther.insert(2, "Last_Name", None)
+        dfObserversOther.insert(3, "First_Name", None)
+
+        # Add Field checking if '_' is in field Observers
+        dfObserversOther['Underscore'] = dfObserversOther['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
+        ###############################
+        # Define the 'First_Name' field
+        # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
+        dfObserversOther['First_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
+        # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
+        dfObserversOther['First_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
+
+        ###############################
+        # Define the 'Last_Name' field
+        # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
+        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
+        # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
+        dfObserversOther['Last_Name'] = dfObserversOther.apply(
+            lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
+
+        # Create a 'First_Last' name which will be the index on which the lookup will be performs
+        dfObserversOther['First_Last'] = dfObserversOther['First_Name'] + '_' + dfObserversOther['Last_Name']
+
+        # Add the Contact_ID field to be populated
+        fieldLen = dfObserversOther.shape[1]
+        # Insert 'DataProcesingLevelID' = 1
+        dfObserversOther.insert(fieldLen-1, "Contact_ID", None)
+
+        #######################################
+        # Read in 'Lookup Table - tlu Contacts'
+        inQuery = f"SELECT tlu_Contacts.Contact_ID, [First_Name] & '_' & [Last_Name] AS First_Last FROM tlu_Contacts;"
+
+        outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Apply the Lookup Code on the Two Data Frames
+        dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
+                                                             "First_Last", "Contact_ID",
+                                                             dfObserversOther, "First_Last",
+                                                             "Contact_ID")
+
+        # Inssert the 'Contact_Role' field with the default 'Observer' value
+        dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
+
+        # Check for Lookups not defined via an outer join.
+        # If 'Contact_ID' is null then these are undefined contacts
+        dfObserversNull = dfObserversOtherwLK[dfObserversOtherwLK['Contact_ID'].isna()]
+        numRec = dfObserversNull.shape[0]
+        if numRec >= 1:
+            logMsg = f'WARNING there are {numRec} records without a defined tlu_Contacts Contact_ID value.'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.warning(logMsg)
+
+            outPath = f'{etlInstance.outDir}\RecordsNoDefinedContact.csv'
+            if os.path.exists(outPath):
+                os.remove(outPath)
+
+            dfObserversNull.to_csv(outPath, index=True)
+
+            logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
+                      f'Exiting ETL_SNPLPORE.py - processSNPLContacts with out full completion.')
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.warning(logMsg)
+            exit()
+
+        logMsg = f"Success ETL_SNPLPORE.py - processSNPLContacts."
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return dfObserversOtherwLK
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
