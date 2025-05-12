@@ -51,9 +51,15 @@ class etl_PINNElephant:
         try:
 
             ######
-            # Process Survey Metadata Form
+            # Process Survey Metadata Form - tblEvents
             ######
-            outDFSurvey = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
+            outDFEvents = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
+
+
+
+
+
+
 
             ######
             # Process Observations Form
@@ -114,7 +120,7 @@ class etl_PINNElephant:
                          'Survey Type': 'SurveyType',
                          '"Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
                          'Regional Survey': 'RegionalSurvey',
-                         'Regional Survey Code': 'RegionalSurveyCode',
+                         'Regional Survey Code': 'RegionalCountCode',
                          'Event Comment': 'Comments',
                          'Collection Device': 'CollectionDeviceID',
                          'Specify other..1': 'DefineOthersCollection',
@@ -137,7 +143,6 @@ class etl_PINNElephant:
             # Move 'EndDate' to right after 'StartDate'
             cols.insert(start_idx + 1, cols.pop(cols.index('EndDate')))
             outDFSubset = outDFSubset[cols]
-
 
             # Data Processing Level Fields for Event Table
             # Get Dataframe Length
@@ -194,79 +199,177 @@ class etl_PINNElephant:
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery, dmInstance)
 
             ##################
-            # Define Observers -  table xref_EventContacts
+            # Define Observers -  table tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
             # Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
             ##################
 
-            outContactsDF = processSNPLContacts(inDF, etlInstance, dmInstance)
-            #Retain only the Fields of interest
-            outContactsDFAppend = outContactsDF[['Event_ID', 'Contact_ID', 'Contact_Role']]
+            outContactsDF = processElephantContacts(outDFSubset, etlInstance, dmInstance)
 
-            insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID, Contact_Role) VALUES (?, ?, ?)')
+            # Lookup the EventID field via the GlobalID field
+            outContactsDF.insert(0, "EventID", None)
+
+            # Import Event Table to define the EventID via the GlobalID
+            inQuery = (f"SELECT tblEvents.EventID, tblEvents.GlobalID FROM tblEvents WHERE ((Not (tblEvents.GlobalID)"
+                       f" Is Null));")
+
+            # Import Events
+            outDFEventsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Lookup the EventID via the Global ID field
+            dfObsEvents_wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
+                                                                         "GlobalID", "EventID",
+                                                                         outContactsDF, "GlobalID",
+                                                                         "EventID")
+
+            # Retain only the Fields of interest
+            dfObsEvents_wEventID = dfObsEvents_wEventID[['EventID', 'ObserverID', 'CreatedDate']]
+
+            insertQuery = (f'INSERT INTO tblEventObservers (EventID, ObserverID, CreatedDate) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            #Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outContactsDFAppend, "xref_Event_Contacts", insertQuery,
+            #Append the Contacts to the tblEventObserers table
+            dm.generalDMClass.appendDataSet(cnxn, dfObsEvents_wEventID, "tblEventObservers", insertQuery,
                                             dmInstance)
 
             ##################
-            # Create tbl_Events_Details record - push field 'Survey Note' to 'Event_Notes', LE Violation,
-            # LE Violation Notes, Predator Stop Time (min), DeviceName
-            ###################
+            # Process ElephantEvents table
+            ##################
 
-            outDFEventDetails = inDF[['GlobalID', 'Survey Note', "LE Violation", "LE Violation Notes",
-                                "Predator Stop Time (min)", "Collection Device"]].rename(
-                columns={'GlobalID': 'Event_ID',
-                         'Survey Note': 'Event_Notes',
-                         'LE Violation': 'LE_Violation',
-                         'LE Violation Notes': 'Violation_Notes',
-                         'Predator Stop Time (min)': 'PredatorStop',
-                         'Collection Device': 'DeviceName'})
+            outDFElephantEvents = outDFSubset[["GlobalID", "ParkCode", "Season", "Visibility", "SurveyType",
+                                                  "RegionalSurvey", "RegionalCountCode", "Comments",
+                                                  "CollectionDeviceID", "CreatedDate"]]
 
-            # Clean Up Notes Fields
-            outDFEventDetails['Event_Notes'] = outDFEventDetails['Event_Notes'].str.replace(',', '')
-            outDFEventDetails['Violation_Notes'] = outDFEventDetails['Violation_Notes'].str.replace(',', '')
+            # Define desired field types
 
-            fieldTypeDic2 = {
-                'Field': ["Event_ID", "Event_Notes", "LE_Violation", "Violation_Notes", "PredatorStop", "DeviceName"],
-                'Type': ["object", "object", "object", "object", "int32", "object"],
-                'DateTimeFormat': ["na", "na", "na", "na", "na", "na"]}
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ["GlobalID", "ParkCode", "Season", "Visibility", "SurveyType",
+                                                  "RegionalSurvey", "RegionalCountCode", "Comments",
+                                                  "CollectionDeviceID", "CreatedDate"],
+                             'Type': ["object", "object", "object", "int64", "object", "object",
+                                      "object", "object", "object", "datetime64"],
+                            'DateTimeFormat': ["na", "na", "na", "na", "na", "na",
+                                               "na", "na", "na", "%m/%d/%Y %I:%M:%S %p"]}
 
-            # Check and Update Field types as needed
-            outDFEventDetails2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic2,
-                                                               inDF=outDFEventDetails)
+            outDFElephantEvents = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFElephantEvents)
 
-            # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
-            # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
-            # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
-            # none values. A real PITA None and Numeric is.
-            cols_to_update = ["Event_Notes", "LE_Violation", "Violation_Notes", "DeviceName", "PredatorStop"]
-            for col in cols_to_update:
-                outDFEventDetails2[col] = dm.generalDMClass.nan_to_none(outDFEventDetails2[col])
+            # Lookup the EventID field via the GlobalID field
+            outDFElephantEvents.insert(0, "EventID", None)
 
-            ## Predator Stop Time set Pandas NaN values to 0 so plays nice with Access - Not Using - 8/15/2024
-            ##outDFEventDetails2['PredatorStop']=outDFEventDetails2['PredatorStop'].fillna(0)
+            # Lookup the EventID via the Global ID field
+            dfElephantEvents_wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
+                                                                          "GlobalID", "EventID",
+                                                                          outDFElephantEvents, "GlobalID",
+                                                                          "EventID")
 
-            # Change Check Box Field If Yes to True and No to False
-            outDFEventDetails2['LE_Violation'] = outDFEventDetails2['LE_Violation'].apply(
-                lambda x: True if x == 'Yes' else False)
+            # Drop the GlobalID field not in the 'tblElephantsEvents' table
+            dfElephantEvents_append = dfElephantEvents_wEventID.drop(columns='GlobalID')
 
-            #Define final query
-            insertQuery = (f'INSERT INTO tbl_Event_Details (Event_ID, Event_Notes, LE_Violation, Violation_Notes'
-                           f', PredatorStop, DeviceName) VALUES (?, ?, ?, ?, ?, ?)')
+            # Lookup the CollectionDeviceID field
+            dfElephantEvents_append = dfElephantEvents_append.rename(columns={'CollectionDeviceID':'CollectionDeviceFull'})
 
-            # Connect to DB
+            # Add the CollectionDeviceID field
+            dfElephantEvents_append.insert(0, "ID", None)
+
+            # Read in the tluDevices lookup table
+            # Import Event Table to define the EventID via the GlobalID
+            inQuery = f"SELECT tluDevices.* FROM tluDevices;"
+
+            # Import Devices Table
+            outDFDevices = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Lookup the CollectionDeviceID via the Global ID field
+            dfElephantEvents_append = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFDevices,
+                                                                               "DeviceCode", "ID",
+                                                                               dfElephantEvents_append,
+                                                                             "CollectionDeviceFull",
+                                                                               "ID")
+
+            # Drop CollectionDeviceID field
+            dfElephantEvents_append = dfElephantEvents_append.drop(columns='CollectionDeviceFull')
+            # Rename ID to CollectionDeviceID
+            dfElephantEvents_append = dfElephantEvents_append.rename(
+                columns={'ID': 'CollectionDeviceID'})
+
+
+            # Set RegionalSurvey field to True if 'Yes' else False
+            dfElephantEvents_append['RegionalSurvey'] = dfElephantEvents_append['RegionalSurvey'] == 'Yes'
+
+            # Confirm the tluESealSeasons has been defiend for the Realized Seasons
+
+            inQuery = f"SELECT tluESealSeasons.* FROM tluESealSeasons"
+
+            #
+            # Check Season Table - Import Seasons Table
+            #
+
+            uniqueSeasonsDF = pd.DataFrame(dfElephantEvents_append['Season'].unique(), columns=['Season'])
+            uniqueSeasonsDF.insert(0, "SeasonDefined", None)
+
+
+            outDFSeasons = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Lookup the CollectionDeviceID via the Global ID field
+            dfSeasonsDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFSeasons,
+                                                                             "Season", "Season",
+                                                                             uniqueSeasonsDF,
+                                                                             "Season",
+                                                                             "SeasonDefined")
+
+            # Confirm the Season has been defined - if not exist
+            # Check for Lookups not defined via an outer join.
+            # If is null then these are undefined contacts
+            dfSeasonsDefined_Null = dfSeasonsDefined[dfSeasonsDefined['SeasonDefined'].isna()]
+
+            numRec = dfSeasonsDefined_Null.shape[0]
+            if numRec >= 1:
+                logMsg = f'WARNING there are {numRec} records without a defined tluESealSeasons.'
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+
+                outPath = f'{etlInstance.outDir}\ESealSeasonNotDefined.csv'
+                if os.path.exists(outPath):
+                    os.remove(outPath)
+
+                dfSeasonsDefined_Null.to_csv(outPath, index=True)
+
+                logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
+                          f'Exiting ETL_PINN_Elephant.py - process_SurveyMetadata with out full completion.')
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.warning(logMsg)
+                exit()
+
+            logMsg = f"Success ETL_PINN_ELephant.py - processElephantContacts."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+
+            # Append the Elephant Event Records
+            insertQuery = (f'INSERT INTO tblElephantEvents (CollectionDeviceID, EventID, ParkCode, Season, Visibility, '
+                           f'SurveyType, RegionalSurvey, RegionalCountCode, Comments, CreatedDate) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            # Append misc Event Fields to the tbl_Event_Details table
-            dm.generalDMClass.appendDataSet(cnxn, outDFEventDetails2, "tbl_Event_Details", insertQuery, dmInstance)
+            # Append the Contacts to the tblEventObserers table
+            dm.generalDMClass.appendDataSet(cnxn, dfElephantEvents_append, "tblElephantEvents", insertQuery,
+                                            dmInstance)
+
+
+            #################################
+            # Define Table SubSiteNotDefined  - STOPPED HERE 5/12/2025
+            # Table SubSiteNotDefined
+            #################################
+
+
+            # Return Survey with the Regional and EventID Defined
 
             logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
-            return outDFSurvey
+            return outDFEvent
 
         except Exception as e:
 
@@ -291,97 +394,71 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
 
     try:
 
-        inDFContacts = inDF[['GlobalID', 'Define Observer(s)', 'Specify other.']].rename(
-                    columns={'GlobalID': 'Event_ID',
-                             'Define Observer(s)': 'Observers',
-                             'Specify other.': 'Other'})
+        inDFContacts = inDF[['GlobalID', "Observers", "ObserversOther", "CreatedDate"]]
 
         #####################################
         # Parse the 'Observers' field on ','
-        # First remove the records where Observers == 'other'
-        inObsNotOther = inDFContacts[inDFContacts['Observers'] != 'other']
+        # First remove the records where Observers == 389
+        inObsNotOther = inDFContacts[inDFContacts['Observers'] != '389']
         inDFObserversParsed = inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(',')).explode('Observers')
+
+        # Trim white space in observers field
+        inDFObserversParsed['Observers'] = inDFObserversParsed['Observers'].str.lstrip()
+
         # Drop any records with 'Other' some cases have defined people and then also other
-        inDFObserversParsed2 = inDFObserversParsed[inDFObserversParsed['Observers'] != 'other']
+        inDFObserversParsed2 = inDFObserversParsed[inDFObserversParsed['Observers'] != '389']
         # Drop field 'other'
-        inDFObserversParsed3 = inDFObserversParsed2.drop(['Other'], axis=1)
+        inDFObserversParsed3 = inDFObserversParsed2.drop(['ObserversOther'], axis=1)
         # Reset Index
         inDFObserversParsed3.reset_index(drop=True)
-
-        # Trim leading white spaces in the 'Observers' field
-        inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
-
 
         ##################################
         # Parse the 'Other' field on ','
         # Retain only the records where Observers contains 'other'
-        inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('other')]
-        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
-        inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
+        inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('389')]
+        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Observers'].str.split(',')).explode('Observers')
+
+        # Trim white space in observers field
+        inDFOthersParsed['Observers'] = inDFOthersParsed['Observers'].str.lstrip()
+
+        # Remove Records that are not 389 - other
+        inDFOthersParsed2 = inDFOthersParsed[inDFOthersParsed['Observers'] == '389']
 
         # Reset Index
         inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
-
-        # Trim leading white spaces in the 'Observers' field
-        inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
 
         ##################################
         # Combine both parsed dataframes for fields Observers and Others
         dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
 
+        # Set Observers field to 'Integer'
+        dfObserversOther['Observers'] = dfObserversOther['Observers'].astype(int)
+
         # Define First and Last Name Fields
         dfObserversOther.insert(2, "Last_Name", None)
         dfObserversOther.insert(3, "First_Name", None)
-
-        # Add Field checking if '_' is in field Observers
-        dfObserversOther['Underscore'] = dfObserversOther['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
-        ###############################
-        # Define the 'First_Name' field
-        # Parse the name before the '_' into the 'First_Name' field if 'Underscore' equals 'Yes'
-        dfObserversOther['First_Name'] = dfObserversOther.apply(
-            lambda row: row['Observers'].split('_')[0] if row['Underscore'] == 'Yes' else row['First_Name'], axis=1)
-        # Parse the name before the ' ' into the 'First_Name' field if 'Underscore' equals 'No'
-        dfObserversOther['First_Name'] = dfObserversOther.apply(
-            lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['First_Name'], axis=1)
-
-        ###############################
-        # Define the 'Last_Name' field
-        # Parse the name after the '_' into the 'Last_Name' field if 'Underscore' equals 'Yes'
-        dfObserversOther['Last_Name'] = dfObserversOther.apply(
-            lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
-        # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
-        dfObserversOther['Last_Name'] = dfObserversOther.apply(
-            lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
-
-        # Create a 'First_Last' name which will be the index on which the lookup will be performs
-        dfObserversOther['First_Last'] = dfObserversOther['First_Name'] + '_' + dfObserversOther['Last_Name']
-
-        # Add the Contact_ID field to be populated
-        fieldLen = dfObserversOther.shape[1]
-        # Insert 'DataProcesingLevelID' = 1
-        dfObserversOther.insert(fieldLen-1, "Contact_ID", None)
-
+        dfObserversOther.insert(4, "ObserverID", None)
         #######################################
         # Read in 'Lookup Table - tlu Contacts'
-        inQuery = f"SELECT tlu_Contacts.Contact_ID, [First_Name] & '_' & [Last_Name] AS First_Last FROM tlu_Contacts;"
+        inQuery = f"SELECT tluObservers.ObserverID, [FirstName] & '_' & [LastName] AS First_Last FROM tluObservers;"
 
         outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Apply the Lookup Code on the Two Data Frames
+        # Apply the Lookup Code on the Two Data Frames to get the Obse
         dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
-                                                             "First_Last", "Contact_ID",
-                                                             dfObserversOther, "First_Last",
-                                                             "Contact_ID")
-
-        # Inssert the 'Contact_Role' field with the default 'Observer' value
-        dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
+                                                             "ObserverID", "ObserverID",
+                                                             dfObserversOther, "Observers",
+                                                             "ObserverID")
 
         # Check for Lookups not defined via an outer join.
-        # If 'Contact_ID' is null then these are undefined contacts
-        dfObserversNull = dfObserversOtherwLK[dfObserversOtherwLK['Contact_ID'].isna()]
+        # If is null then these are undefined contacts
+        dfObserversNull = dfObserversOtherwLK[
+            dfObserversOtherwLK['ObserverID'].isna() | (dfObserversOtherwLK['ObserverID'] == 389)
+            ]
+
         numRec = dfObserversNull.shape[0]
         if numRec >= 1:
-            logMsg = f'WARNING there are {numRec} records without a defined tlu_Contacts Contact_ID value.'
+            logMsg = f'WARNING there are {numRec} records without a defined tluObservers ObserverID value.'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
 
@@ -392,12 +469,12 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
             dfObserversNull.to_csv(outPath, index=True)
 
             logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
-                      f'Exiting ETL_SNPLPORE.py - processSNPLContacts with out full completion.')
+                      f'Exiting ETL_PINN_Elephant.py - processSNPLContacts with out full completion.')
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
             exit()
 
-        logMsg = f"Success ETL_SNPLPORE.py - processSNPLContacts."
+        logMsg = f"Success ETL_PINN_ELephant.py - processElephantContacts."
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
@@ -405,7 +482,7 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
 
     except Exception as e:
 
-        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processElephantContacts: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
