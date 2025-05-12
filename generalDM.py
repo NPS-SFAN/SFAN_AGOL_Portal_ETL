@@ -726,9 +726,18 @@ class generalDMClass:
             merged_df = pd.merge(dfIn, dfLookupTable, how='left', left_on=dflookupField, right_on=lookupField)
 
             lookupField_y = f'{lookupValue}_y'
-            # Update defined field with the lookup value
-            dfIn[dfDefineField] = merged_df[lookupField_y]
 
+            # Update defined field with the lookup value
+            if lookupField_y in merged_df.columns:
+                dfIn[dfDefineField] = merged_df[lookupField_y]
+
+            elif lookupField_y in merged_df.columns:  # When define field is in twice will be assigned an _x
+                lookupField_x = f'{lookupValue}_x'
+                dfIn[dfDefineField] = merged_df[lookupField_x]
+
+            else: #Native field name - when lookup field and lookup value are the same
+                lookupField = f'{lookupValue}'
+                dfIn[dfDefineField] = merged_df[lookupField]
             logMsg = f'Success applying lookup for lookup Field:{lookupField} - lookup Value Field: {lookupField}'
             generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
@@ -738,7 +747,7 @@ class generalDMClass:
         except Exception as e:
             logMsg = (f'WARNING ERROR - applyLookupToDFField for lookup Field:{lookupField} - lookup Value Field:'
                       f' {lookupField} - {e}')
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
