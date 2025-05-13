@@ -83,7 +83,7 @@ class generalDMClass:
             logFile.write(logMsg + "\n")
             logFile.close()
         except:
-            traceback.print_exc(file=sys.stdout)
+            traceback.print_exc(file=sys.__stdout__)
 
 
     def timeFun():
@@ -621,12 +621,16 @@ class generalDMClass:
             # Create a cursor to execute SQL commands for Append
             cursor = cnxn.cursor()
 
+            rows_inserted = 0  # Track how many rows we successfully insert
+
             # Iterate over each row in the DataFrame and insert it into the table
             for index, row in dfToAppend.iterrows():
                 values = tuple(row)
                 cursor.execute(insertQuery, values)
+
+                rows_inserted += 1
+
                 logMsg = f'Appended Records: {values}'
-                generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.info(logMsg)
                 # Commit the changes to the database
                 cnxn.commit()
@@ -635,17 +639,35 @@ class generalDMClass:
             cursor.close()
             cnxn.close()
 
+            # Record Count Verification QA
+            expected_count = len(dfToAppend)
+            success = (rows_inserted == expected_count)
+
+            logMsg = (
+                f"Record Count Verification: Expected={expected_count}, Inserted={rows_inserted} - "
+                f"{'SUCCESS' if success else 'MISMATCH'}"
+            )
+
+            logging.info(logMsg)
+
+            if not success:
+                warning_msg = (f"ERROR: Record count mismatch during append to {appendToTable}. Expected {expected_count}"
+                               f", but only {rows_inserted} inserted.")
+
+                logging.error(warning_msg)
+                raise RuntimeError(warning_msg)
+
+            success_msg = f"{rows_inserted} records successfully appended to {appendToTable}."
+            logging.info(success_msg)
+
             logMsg = f'Records Successfully import to {appendToTable}'
-            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
         except Exception as e:
 
             logMsg = f'WARNING ERROR - "Exiting Error appendDataSet: {e}'
-            generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
-            traceback.print_exc(file=sys.stdout)
-
+            traceback.print_exc(file=sys.__stdout__ )
 
     def appendDataSetwDic(cnxn, dfToAppend, appendToTable, fieldTypeDic, insertQuery, dmInstance):
 
