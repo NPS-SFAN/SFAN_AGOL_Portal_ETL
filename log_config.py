@@ -9,7 +9,7 @@ def setup_logging():
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s - %(levelname)s - %(message)s',
                         handlers=[
-                            logging.FileHandler("ScriptProcessingLog.log", mode="w"),  # File output A is append
+                            logging.FileHandler("ScriptProcessingLog.log", mode="w"),  # File output A is append to existing, while w - overwrites the existing log file
                             logging.StreamHandler()  # Console output
                         ])
 
