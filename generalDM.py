@@ -718,31 +718,47 @@ class generalDMClass:
         :param dfDefineField: field in the dataframe to which the lookupTable lookupField value will be updated/applied
 
         :return: outDF: Output dataframe with the updated lookupfield applied
+
+        Updates: Updated Logic to do a join on the update field step - 20250513.
         """
 
         try:
 
             # Join via Merge Lookup data from to the passed dataframe via join fields
-            merged_df = pd.merge(dfIn, dfLookupTable, how='left', left_on=dflookupField, right_on=lookupField)
+            merged_df = pd.merge(dfIn, dfLookupTable, how='left', left_on=dflookupField, right_on=lookupField,
+                                 suffixes=("_src", "_lk"))
 
-            lookupField_y = f'{lookupValue}_y'
+            lookupField_lk = f'{lookupValue}_lk'
+            dfDefineField_src = f'{dfDefineField}_src'  # Field to be Updated in some scenarios
+            # Update defined field with the lookup value via join on the 'dflookupField' to the 'dfIn' data frame
+            if lookupField_lk in merged_df.columns:
 
-            # Update defined field with the lookup value
-            if lookupField_y in merged_df.columns:
-                dfIn[dfDefineField] = merged_df[lookupField_y]
+                if dfDefineField_src in merged_df.columns:  # If the field to be updated is in both source and lookup
+                    merged_df[dfDefineField_src] = merged_df[lookupField_lk]
+                    # Rename field 'lookupField_src' back to 'lookupField'
+                    merged_df = merged_df.rename(columns={dfDefineField_src: dfDefineField})
 
-            elif lookupField_y in merged_df.columns:  # When define field is in twice will be assigned an _x
-                lookupField_x = f'{lookupValue}_x'
-                dfIn[dfDefineField] = merged_df[lookupField_x]
+                elif dfDefineField in merged_df.columns:  # Normal Source, Lookup field scenario in the join table
+                    merged_df[dfDefineField] = merged_df[lookupField_lk]
 
-            else: #Native field name - when lookup field and lookup value are the same
-                lookupField = f'{lookupValue}'
-                dfIn[dfDefineField] = merged_df[lookupField]
+                else:
+                    logMsg = f'Undefined Join Update Field Relationship - lookupField_y - Exiting Script'
+                    logging.critical(logMsg, exc_info=True)
+                    sys.exit(1)
+
+            elif lookupValue in merged_df.columns: # Only field lookupValue once
+                merged_df[dfDefineField] = merged_df[lookupField]
+
+            else:
+                logMsg = f'Undefined Join Update Field Relationship - Exiting Script'
+                logging.critical(logMsg, exc_info=True)
+                sys.exit(1)
+
             logMsg = f'Success applying lookup for lookup Field:{lookupField} - lookup Value Field: {lookupField}'
             generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            return dfIn
+            return merged_df
 
         except Exception as e:
             logMsg = (f'WARNING ERROR - applyLookupToDFField for lookup Field:{lookupField} - lookup Value Field:'
