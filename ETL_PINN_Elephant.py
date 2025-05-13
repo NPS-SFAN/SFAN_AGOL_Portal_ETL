@@ -55,7 +55,10 @@ class etl_PINNElephant:
             ######
             outDFEvents = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
 
-
+            ######
+            # Process Counts Form - tblSealCount
+            ######
+            #outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
 
 
@@ -118,7 +121,7 @@ class etl_PINNElephant:
                          'Define Observer(s)': 'Observers',
                          'Specify other.': 'ObserversOther',
                          'Survey Type': 'SurveyType',
-                         '"Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
+                         'Sub Sites Not Surveyed': 'SubSitesNotSurveyed',
                          'Regional Survey': 'RegionalSurvey',
                          'Regional Survey Code': 'RegionalCountCode',
                          'Event Comment': 'Comments',
@@ -305,8 +308,7 @@ class etl_PINNElephant:
             #
 
             uniqueSeasonsDF = pd.DataFrame(dfElephantEvents_append['Season'].unique(), columns=['Season'])
-            uniqueSeasonsDF.insert(0, "SeasonDefined", None)
-
+            uniqueSeasonsDF.insert(0, "SeasonToDefine", None)
 
             outDFSeasons = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
@@ -315,12 +317,12 @@ class etl_PINNElephant:
                                                                              "Season", "Season",
                                                                              uniqueSeasonsDF,
                                                                              "Season",
-                                                                             "SeasonDefined")
+                                                                             "SeasonToDefine")
 
             # Confirm the Season has been defined - if not exist
             # Check for Lookups not defined via an outer join.
             # If is null then these are undefined contacts
-            dfSeasonsDefined_Null = dfSeasonsDefined[dfSeasonsDefined['SeasonDefined'].isna()]
+            dfSeasonsDefined_Null = dfSeasonsDefined[dfSeasonsDefined['SeasonToDefine'].isna()]
 
             numRec = dfSeasonsDefined_Null.shape[0]
             if numRec >= 1:
@@ -344,6 +346,12 @@ class etl_PINNElephant:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
+            # Remove/Clean Up Fields - EventID_lk, ID_lk, DeviceCode, DeviceName, Notes
+            dfElephantEvents_append = dfElephantEvents_append.drop(
+                columns=['EventID_lk', 'ID_lk', 'DeviceCode', 'DeviceName', 'Notes']
+            )
+
+
 
             # Append the Elephant Event Records
             insertQuery = (f'INSERT INTO tblElephantEvents (CollectionDeviceID, EventID, ParkCode, Season, Visibility, '
@@ -357,23 +365,36 @@ class etl_PINNElephant:
 
 
             #################################
-            # Define Table SubSiteNotDefined  - STOPPED HERE 5/12/2025
+            # Define Table SubSiteNotDefined
             # Table SubSiteNotDefined
             #################################
 
+            outSubSitesNotSurveyDF = tblSubSitesNotSurveyed(outDFSubset, outDFEventsLU, etlInstance, dmInstance)
 
+            #####################################################
             # Return Survey with the Regional and EventID Defined
+            # Use existing outDFEvent dataframe and the already imported outDFEventsLU
+
+            outDFEvent.insert(0, "EventID", None)
+
+            # Lookup the LocationID value via SubSiteCode
+            outDFEventwGlIDwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
+                                                                       "GlobalID", "EventID",
+                                                                       outDFEvent, "GlobalID",
+                                                                       "EventID")
+            # Drop the EventID_lk field
+            outDFEventwGlIDwEventID = outDFEventwGlIDwEventID.drop(columns=['EventID_lk'])
 
             logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
-            return outDFEvent
+            # Returning the Dataframe with the Survey and Event information pushed
+            return outDFEventwGlIDwEventID
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Survey: {e}'
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_SurveyMetadata: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
@@ -483,6 +504,89 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processElephantContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
+    """
+    Workflow to define the Sub Sites Not Defined table - tblSubSitesNotSurveyed
+    Lookup the EventID, Explode the Multi Select SubSiteNotSurveyed field then look up the LocationID via the
+    SubSiteCode in the tblLocations Table and append records to the tblSubSitesNotSurveyed table
+    Undefined/Not Present subsites (i.e. 9999) are going to unknown subsite definition.
+
+    :param inDF: Data Frame being processed with Sub Sites Not Surveys, and Regional ID field
+    :param inDFEvents: Data Frame with the EventID and GlabalID attributes used to define the EventID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return:
+    """
+
+    try:
+        # Subset to only need fields
+        subSiteDF = inDF[['GlobalID', 'SubSitesNotSurveyed']]
+
+        # Add EventID field
+        subSiteDF.insert(0, "EventID", None)
+
+        # Lookup the EventID value via RegionalID
+        subSiteDFwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, inDFEvents,
+                                                                           "GlobalID", "EventID",
+                                                                           subSiteDF, "GlobalID",
+                                                                           "EventID")
+        ###################################
+        # Explode the 'SubSitesNotSurveyed'
+        subSiteDFwEventIDParsed = (subSiteDFwEventID.assign(SubSitesNotSurveyed=subSiteDFwEventID['SubSitesNotSurveyed'].str.split(',')).
+                            explode('SubSitesNotSurveyed'))
+
+        # Trim white space in observers field
+        subSiteDFwEventIDParsed['SubSitesNotSurveyed'] = subSiteDFwEventIDParsed['SubSitesNotSurveyed'].str.lstrip()
+
+        ##################################
+        # Lookup the LocationID via the SubSitesNotSurveyed
+
+        # Add LocationID field
+        subSiteDFwEventIDParsed.insert(0, "LocationID", None)
+
+        # Set LocationID field to Int64
+        subSiteDFwEventIDParsed['LocationID'] = subSiteDFwEventIDParsed['LocationID'].astype('Int64')
+
+        # Read in the tluDevices lookup table
+        # Import Event Table to define the EventID via the GlobalID
+        inQuery = (f"SELECT tblLocations.LocationID, tblLocations.SubSiteCode, tblLocations.ESealLocation FROM "
+                   f"tblLocations WHERE tblLocations.ESealLocation=True;")
+
+        # Import Locations Table
+        outDFLocations = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Lookup the LocationID value via SubSiteCode
+        subSiteDFwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLocations,
+                                                                   "SubSiteCode", "LocationID",
+                                                                   subSiteDFwEventIDParsed, "SubSitesNotSurveyed",
+                                                                   "LocationID")
+
+        ###################################
+        # Append the Sub Sites Not Surveyed Records
+
+        subSiteDFAppend = subSiteDFwEventID[['EventID', 'LocationID']]
+
+        insertQuery = f'INSERT INTO tblSubSitesNotSurveyed (EventID, LocationID) VALUES (?, ?)'
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        # Append the Contacts to the tblEventObserers table
+        dm.generalDMClass.appendDataSet(cnxn, subSiteDFAppend, "tblSubSitesNotSurveyed", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success ETL_PINN_ELephant.py - tblSubSitesNotSurveyed."
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return subSiteDFAppend
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - tblSubSitesNotSurveyed: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
