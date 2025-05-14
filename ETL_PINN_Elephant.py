@@ -58,7 +58,7 @@ class etl_PINNElephant:
             ######
             # Process Counts Form - tblSealCount
             ######
-            #outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
 
 
@@ -299,7 +299,7 @@ class etl_PINNElephant:
             # Set RegionalSurvey field to True if 'Yes' else False
             dfElephantEvents_append['RegionalSurvey'] = dfElephantEvents_append['RegionalSurvey'] == 'Yes'
 
-            # Confirm the tluESealSeasons has been defiend for the Realized Seasons
+            # Confirm the tluESealSeasons has been defined for the Realized Seasons
 
             inQuery = f"SELECT tluESealSeasons.* FROM tluESealSeasons"
 
@@ -312,7 +312,7 @@ class etl_PINNElephant:
 
             outDFSeasons = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-            # Lookup the CollectionDeviceID via the Global ID field
+            # Lookup the Season
             dfSeasonsDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFSeasons,
                                                                              "Season", "Season",
                                                                              uniqueSeasonsDF,
@@ -351,8 +351,6 @@ class etl_PINNElephant:
                 columns=['EventID_lk', 'ID_lk', 'DeviceCode', 'DeviceName', 'Notes']
             )
 
-
-
             # Append the Elephant Event Records
             insertQuery = (f'INSERT INTO tblElephantEvents (CollectionDeviceID, EventID, ParkCode, Season, Visibility, '
                            f'SurveyType, RegionalSurvey, RegionalCountCode, Comments, CreatedDate) '
@@ -362,7 +360,6 @@ class etl_PINNElephant:
             # Append the Contacts to the tblEventObserers table
             dm.generalDMClass.appendDataSet(cnxn, dfElephantEvents_append, "tblElephantEvents", insertQuery,
                                             dmInstance)
-
 
             #################################
             # Define Table SubSiteNotDefined
@@ -377,20 +374,20 @@ class etl_PINNElephant:
 
             outDFEvent.insert(0, "EventID", None)
 
-            # Lookup the LocationID value via SubSiteCode
+            # Lookup the EventID value via SubSiteCode
             outDFEventwGlIDwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
                                                                        "GlobalID", "EventID",
-                                                                       outDFEvent, "GlobalID",
+                                                                       outDFSurvey, "GlobalID",
                                                                        "EventID")
-            # Drop the EventID_lk field
-            outDFEventwGlIDwEventID = outDFEventwGlIDwEventID.drop(columns=['EventID_lk'])
+            # Subset to only the Event Field to be retained for down stream processing
+            outDFEventwGlIDwEventID2 = outDFEventwGlIDwEventID[['EventID', 'GlobalID', 'StartTime']]
 
             logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe with the Survey and Event information pushed
-            return outDFEventwGlIDwEventID
+            return outDFEventwGlIDwEventID2
 
         except Exception as e:
 
@@ -399,6 +396,154 @@ class etl_PINNElephant:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+    def process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance):
+
+        """
+        ETL routine for the Counts Repeat Form table.
+        The majority of this information on this form will be pushed to the following tables:
+        tblSealCount and Red Seal and Shark Bite - tblPhocaSealCount.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:outDFCounts: Dataframe of the exported Count table records will be used in subsequent ETL Routines.
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'countsrepeats' in key:
+                    inDF = df
+                    break
+
+            outDFSubset = inDF[["Sub Site",	"Bull", "SA4","SA3", "SA2", "SA1", "Other SA", "Cow", "Pup", "Dead Pup",
+                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "ZALOPHUS", "Other", "Define Other",
+                                "Specify other.", "Red Seal", "Shark Bite", "ParentGlobalID", "CreationDate"]].rename(
+                columns={"Sub Site": "LocationID",
+                         "Other SA": "OtherSA",
+                         "Pup": "EPUP",
+                         "Dead Pup": "DEPUP",
+                         "PHOCA": "ADULT",
+                         "PHOCA Pup": "HPUP",
+                         "ZALOPHUS": "ZAL",
+                         "Define Other": "DefineOther",
+                         "Specify other.": "SpecifyOther",
+                         "Red Seal": "RedFurPhoca",
+                         "Shark Bite": "SharkBitePhoca",
+                         "CreationDate": "CreatedDate"})
+
+            ##############################
+            # Numerous Field CleanUp and Standardization of field format
+            ##############################
+
+            # Define field types
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ["LocationID",	"Bull", "SA4","SA3", "SA2", "SA1", "OtherSA", "Cow", "EPUP", "DPUP",
+                                "WNR", "IMM", "YRLNG", "ADULT", "HPUP", "ZAL", "Other", "DefineOther", "SpecifyOther",
+                                      "RedFurPhoca", "SharkBitePhoca", "ParentGlobalID", "CreatedDate"],
+                            'Type': ["int64", "int64", "int64", "int64", "int64", "int64", "int64", "int64", "int64",
+                                     "int64", "int64", "int64", "int64", "int64", "int64", "int64", "int64", "object",
+                                     "object", "int64", "int64", "object", "datetime64"],
+                            'DateTimeFormat': ["na", "na", "na","na", "na", "na", "na", "na", "na", "na",
+                                "na", "na", "na", "na", "na", "na", "na", "na", "na", "na", "na", "na",
+                                               "%m/%d/%Y %I:%M:%S %p"]}
+
+            outDFCounts = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+
+            # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
+            outDFCountswEventID = pd.merge(outDFCounts, outDFEvents, how='left', left_on="ParentGlobalID",
+                                           right_on="GlobalID", suffixes=("_src", "_lk"))
+
+
+
+            #
+            # Move field tha will be in all stack records to front
+            #
+
+            cols_to_move = ['EventID', 'StartTime', 'CreatedDate']
+
+            # All columns
+            all_cols = list(outDFCountswEventID.columns)
+
+            # Index of the 'LocationID' column
+            loc_index = all_cols.index('LocationID')
+
+            # Remove the columns to move from their current positions
+            for col in cols_to_move:
+                all_cols.remove(col)
+
+            # Insert them before 'LocationID'
+            for col in reversed(cols_to_move):  # reverse to maintain order when inserting
+                all_cols.insert(loc_index, col)
+
+            # Reorder the DataFrame
+            outDFCountswEventID = outDFCountswEventID[all_cols]
+
+            # Rename Start TIme to ObservationTime
+            outDFCountswEventID = outDFCountswEventID.rename(columns={'StartTime':'ObservationTime'})
+
+            #
+            # Subset to the Counts Fields and Stack Records - Going to the tblSealCount table
+            #
+            outDFCountsStack1 = outDFCountswEventID.drop(['RedFurPhoca', 'SharkBitePhoca', 'ParentGlobalID',
+                                                            'GlobalID', 'Other', 'DefineOther', 'SpecifyOther'], axis=1)
+
+            # Define fields identifying stack records
+            id_vars = ['CreatedDate', 'EventID', 'ObservationTime', 'LocationID']
+
+            # Stack Records
+            outDFCountsStack1Melt = outDFCountsStack1.melt(id_vars=id_vars, var_name='MatureCode', value_name='Enumeration')
+
+            # Drop records where Enumeration in Null
+            outDFCountsStack1Melt = outDFCountsStack1Melt.dropna(subset=['Enumeration'])
+
+
+            # STOPPED HERE 5/14/2025
+            ####################################
+            # Harvest the Other, DefineOther, and SpecifyOther fields.  Other is the Enumerated/Count field, DefineOther
+            # will be the DefineOther values - EUJU, ARTO, and CAUR values per defined value.
+            # For the Specify Other if present add the ND Maturity Code and add the other value to the QCNotes field This will be used
+            ####################################
+            outDFCountsStack2 = outDFCountswEventID[['CreatedDate', 'EventID', 'ObservationTime', 'LocationID', 'Other',
+                                                  'DefineOther', 'SpecifyOther']]
+
+
+
+
+
+
+
+            # After Stacking all the records ready to append the records to
+
+
+
+
+
+
+
+
+            # Append outDFSurvey to 'tbl_Events'
+            # Pass final Query to be appended
+            insertQuery = (f'INSERT INTO tblPhocaSealCount (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
+                           f'CreatedDate, CreatedBy, DataProcessingLevelID, DataProcessingLevelDate, '
+                           f'DataProcessingLevelUser, Project, ProtocolID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+                           f'?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, TBD, "tblPhocaSealCount", insertQuery, dmInstance)
+
+            return outDFEventwGlIDwEventID
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Counts: {e}'
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
 
 def processElephantContacts(inDF, etlInstance, dmInstance):
     """
@@ -579,7 +724,6 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
                                         dmInstance)
 
         logMsg = f"Success ETL_PINN_ELephant.py - tblSubSitesNotSurveyed."
-        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
         return subSiteDFAppend
@@ -587,6 +731,7 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - tblSubSitesNotSurveyed: {e}'
-        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
