@@ -44,3 +44,8 @@ Methods/Functions to be used for Pinnipeds Elephant Seal ETL workflow.
 ## ETL_PCM_LocationsManualParking.py
 ETL workflow pulling the Locations Manual/Parking information from the Plan Communities Frontend Database and exporting (i.e. ETL) as
 two Feature Layers to AGOL/Portal.  Workflow going from Access Database to AGOL/Portal.
+
+# General Files
+## tests/test_etl.py
+ETL Unit Testing Script - needs to be further developed
+
