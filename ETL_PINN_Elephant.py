@@ -512,6 +512,12 @@ class etl_PINNElephant:
             outDFCountsStack2 = outDFCountswEventID[['CreatedDate', 'EventID', 'ObservationTime', 'LocationID', 'Other',
                                                   'DefineOther', 'SpecifyOther']]
 
+            # Drop records where Other is Null
+            outDFCountsStack2 = outDFCountsStack2.dropna(subset=['Other'])
+
+            # Stack Records
+            outDFCountsStack1Melt = outDFCountsStack1.melt(id_vars=id_vars, var_name='MatureCode',
+                                                           value_name='Enumeration')
 
 
 
