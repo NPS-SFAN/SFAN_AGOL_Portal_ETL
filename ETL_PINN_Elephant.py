@@ -502,12 +502,14 @@ class etl_PINNElephant:
             # Drop records where Enumeration in Null
             outDFCountsStack1Melt = outDFCountsStack1Melt.dropna(subset=['Enumeration'])
 
+            # Add QC Notes Field for pending append
+            outDFCountsStack1Melt.insert(6, 'QCNotes', np.nan)
 
-            # STOPPED HERE 5/14/2025
             ####################################
             # Harvest the Other, DefineOther, and SpecifyOther fields.  Other is the Enumerated/Count field, DefineOther
             # will be the DefineOther values - EUJU, ARTO, and CAUR values per defined value.
-            # For the Specify Other if present add the ND Maturity Code and add the other value to the QCNotes field This will be used
+            # For the Specify Other if present add the ND Maturity Code and add the other value to the QCNotes field
+            # This will be used
             ####################################
             outDFCountsStack2 = outDFCountswEventID[['CreatedDate', 'EventID', 'ObservationTime', 'LocationID', 'Other',
                                                   'DefineOther', 'SpecifyOther']]
@@ -515,41 +517,97 @@ class etl_PINNElephant:
             # Drop records where Other is Null
             outDFCountsStack2 = outDFCountsStack2.dropna(subset=['Other'])
 
-            # Stack Records
-            outDFCountsStack1Melt = outDFCountsStack1.melt(id_vars=id_vars, var_name='MatureCode',
-                                                           value_name='Enumeration')
+            # 1- Process the Other where is a Defined Other (i.e. EUJU, ARTO or CAUR.
+            outDFCountsStack3 = outDFCountsStack2[~outDFCountsStack2['DefineOther'].str.lower().eq('other')]
 
+            # Drop the SpecifyOther field
+            outDFCountsStack3 = outDFCountsStack3.drop(['SpecifyOther'], axis=1)
 
+            # Rename 'Other' field to 'Enumeration' and 'DefineOther' to 'MatureCode
+            outDFCountsStack3 = outDFCountsStack3.rename(columns={'Other': 'Enumeration', 'DefineOther': 'MatureCode'})
 
+            # Move 'MatureCode' to before 'Enumeration' field
+            # Get current list of columns
+            cols = list(outDFCountsStack3.columns)
 
+            # Remove 'MatureCode' from its current position
+            cols.remove('MatureCode')
 
+            # Find the index of 'Enumeration'
+            enum_index = cols.index('Enumeration')
 
-            # After Stacking all the records ready to append the records to
+            # Insert 'MatureCode' before 'Enumeration'
+            cols.insert(enum_index, 'MatureCode')
 
+            # Reorder the DataFrame - This is ready to be added to the 'outDFCountsStack1Melt' dataframe
+            outDFCountsStack3 = outDFCountsStack3[cols]
 
+            # Insert QCNotes field for pending append
+            outDFCountsStack3.insert(6, 'QCNotes', np.nan)
 
+            # 2 - Add Other record with a ND value, count and name in the QC Notes field
+            outDFCountsStack_NE = outDFCountsStack2[outDFCountsStack2['SpecifyOther'].notna()]
 
+            # Rename 'Other' field to 'Enumeration' and 'DefineOther' to 'MatureCode
+            outDFCountsStack_NE = outDFCountsStack_NE.rename(columns={'Other': 'Enumeration'})
 
+            # Define a MatureCode value of 'ND' that is not Defined
+            outDFCountsStack_NE.insert(4, "MatureCode", "ND")
 
+            # Add QCNotes field with the Specify Other value
+            outDFCountsStack_NE["QCNotes"] = "Taxon Not Defined: " + outDFCountsStack_NE['SpecifyOther']
 
+            # Drop fields DefineOther and SpecifyOther
+            outDFCountsStack_NE = outDFCountsStack_NE.drop(['DefineOther', 'SpecifyOther'], axis=1)
 
-            # Append outDFSurvey to 'tbl_Events'
+            # Combine/Append the Other records
+            combinedOtherDF = pd.concat([outDFCountsStack3, outDFCountsStack_NE], ignore_index=True)
+
+            # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
+            combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, combinedOtherDF], ignore_index=True)
+
+            # After Stacking all the records ready to append the records to 'tblSealCount'
+
             # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tblPhocaSealCount (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
-                           f'CreatedDate, CreatedBy, DataProcessingLevelID, DataProcessingLevelDate, '
-                           f'DataProcessingLevelUser, Project, ProtocolID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
-                           f'?)')
+            insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
+                           f'MatureCode, Enumeration, QCNotes) VALUES (?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, TBD, "tblPhocaSealCount", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, combinedAllCountsDF, "tblSealCount", insertQuery, dmInstance)
 
-            return outDFEventwGlIDwEventID
+
+            # Process RedFur and Shark Bite Records this goes to tblPhocaSealCount
+
+            return combinedAllCountsDF
 
         except Exception as e:
 
             logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Counts: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+def processRedFurShark(inDF, etlInstance, dmInstance):
+    """
+    Process Red Fur  and or Shark Bite Records to tblPhocaSealCount table
+
+    :param inDF: Data Frame being processed, with defined EventID - this will be the preprocessed Counts Dataframe
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return: outRedSealDF - dataframe with the records pushed to the tblPhocaSealCount table
+    """
+
+    try:
+
+
+        return combinedAllCountsDF
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - procesRedFurShark: {e}'
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
 
 def processElephantContacts(inDF, etlInstance, dmInstance):
     """
