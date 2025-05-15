@@ -459,8 +459,6 @@ class etl_PINNElephant:
             outDFCountswEventID = pd.merge(outDFCounts, outDFEvents, how='left', left_on="ParentGlobalID",
                                            right_on="GlobalID", suffixes=("_src", "_lk"))
 
-
-
             #
             # Move field tha will be in all stack records to front
             #
@@ -575,8 +573,11 @@ class etl_PINNElephant:
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, combinedAllCountsDF, "tblSealCount", insertQuery, dmInstance)
 
-
+            ######################################################################
             # Process RedFur and Shark Bite Records this goes to tblPhocaSealCount
+            ######################################################################
+
+            outRedFurShark = processRedFurShark(outDFCountswEventID, etlInstance, dmInstance)
 
             return combinedAllCountsDF
 
@@ -588,7 +589,7 @@ class etl_PINNElephant:
 
 def processRedFurShark(inDF, etlInstance, dmInstance):
     """
-    Process Red Fur  and or Shark Bite Records to tblPhocaSealCount table
+    Process Red Fur and or Shark Bite Records to tblPhocaSealCount table
 
     :param inDF: Data Frame being processed, with defined EventID - this will be the preprocessed Counts Dataframe
     :param etlInstance: ETL processing instance
@@ -598,6 +599,27 @@ def processRedFurShark(inDF, etlInstance, dmInstance):
     """
 
     try:
+
+        dfRedFurShark = inDF[['EventID', 'LocationID', 'ObservationTime', 'RedFurPhoca', 'SharkBitePhoca',
+                              'CreatedDate']]
+
+        # Drop all records where
+        dfRedFurSharkNA = dfRedFurShark.dropna(subset=['RedFurPhoca', 'SharkBitePhoca'], how='all')
+
+        # Set all red/shark value where null to 0
+        dfRedFurSharkNA[['RedFurPhoca', 'SharkBitePhoca']] = dfRedFurSharkNA[['RedFurPhoca', 'SharkBitePhoca']].fillna(0)
+
+        # Set Field Type
+        dfRedFurSharkNA[['RedFurPhoca', 'SharkBitePhoca']] = (dfRedFurSharkNA[['RedFurPhoca', 'SharkBitePhoca']].
+                                                              astype('int64'))
+        # Pass final Query to be appended
+        insertQuery = (f'INSERT INTO tblPhocaSealCount (EventID, LocationID, ObservationTime, RedFurPhoca, '
+                       f'SharkBitePhoca, CreatedDate) VALUES (?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, dfRedFurSharkNA, "tblPhocaSealCount", insertQuery, dmInstance)
+
+
 
 
         return combinedAllCountsDF
