@@ -56,11 +56,14 @@ class etl_PINNElephant:
             outDFEvents = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
 
             ######
-            # Process Counts Form - tblSealCount
+            # Process Counts Form - tblSealCount and tblPhocaSealCount-(RedFur and Shark Bite)
             ######
             outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
-
+            ######
+            # Process Resights Form - STOPPED HERE
+            ######
+            outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
 
 
@@ -443,7 +446,7 @@ class etl_PINNElephant:
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {'Field': ["LocationID",	"Bull", "SA4","SA3", "SA2", "SA1", "OtherSA", "Cow", "EPUP", "DPUP",
+            fieldTypeDic = {'Field': ["LocationID",	"Bull", "SA4", "SA3", "SA2", "SA1", "OtherSA", "Cow", "EPUP", "DPUP",
                                 "WNR", "IMM", "YRLNG", "ADULT", "HPUP", "ZAL", "Other", "DefineOther", "SpecifyOther",
                                       "RedFurPhoca", "SharkBitePhoca", "ParentGlobalID", "CreatedDate"],
                             'Type': ["int64", "int64", "int64", "int64", "int64", "int64", "int64", "int64", "int64",
@@ -460,7 +463,7 @@ class etl_PINNElephant:
                                            right_on="GlobalID", suffixes=("_src", "_lk"))
 
             #
-            # Move field tha will be in all stack records to front
+            # Move field that will be in all stack records to front
             #
 
             cols_to_move = ['EventID', 'StartTime', 'CreatedDate']
@@ -564,7 +567,23 @@ class etl_PINNElephant:
             # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
             combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, combinedOtherDF], ignore_index=True)
 
-            # After Stacking all the records ready to append the records to 'tblSealCount'
+            # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
+            duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
+
+            if duplicatesDF.len[0] > 0:
+
+                duplicates_all = combinedAllCountsDF[combinedAllCountsDF.duplicated(keep=False)]
+
+                outPath = f'{etlInstance.outDir}\DuplicateCounts.csv'
+                if os.path.exists(outPath):
+                    os.remove(outPath)
+
+                duplicates_all.to_csv(outPath, index=True)
+
+                msgLog = f'Duplicate Records in the Counts Data Frame to be appended see export - {outPath}'
+                logging.critical(logMsg, exc_info=True)
+
+
 
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
@@ -579,6 +598,9 @@ class etl_PINNElephant:
 
             outRedFurShark = processRedFurShark(outDFCountswEventID, etlInstance, dmInstance)
 
+            msgLog = f'Success process_Counts ETL Routines'
+            logging.info(logMsg, exc_info=True)
+
             return combinedAllCountsDF
 
         except Exception as e:
@@ -586,6 +608,61 @@ class etl_PINNElephant:
             logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Counts: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+    def process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance):
+
+        """
+        ETL routine for the Resights Repeat Form table.
+        The majority of this information on this form will be pushed to the following tables:
+        tblResightEvents and tblResights
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:outDFCounts: Dataframe of the exported Count table records will be used in subsequent ETL Routines.
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'countsrepeats' in key:
+                    inDF = df
+                    break
+
+            #STOPPED HERE 5/15/2025 KRS
+            outDFSubset = inDF[["Sub Site",	"Bull", "SA4","SA3", "SA2", "SA1", "Other SA", "Cow", "Pup", "Dead Pup",
+                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "ZALOPHUS", "Other", "Define Other",
+                                "Specify other.", "Red Seal", "Shark Bite", "ParentGlobalID", "CreationDate"]].rename(
+                columns={"Sub Site": "LocationID",
+                         "Other SA": "OtherSA",
+                         "Pup": "EPUP",
+                         "Dead Pup": "DEPUP",
+                         "PHOCA": "ADULT",
+                         "PHOCA Pup": "HPUP",
+                         "ZALOPHUS": "ZAL",
+                         "Define Other": "DefineOther",
+                         "Specify other.": "SpecifyOther",
+                         "Red Seal": "RedFurPhoca",
+                         "Shark Bite": "SharkBitePhoca",
+                         "CreationDate": "CreatedDate"})
+
+            ##############################
+            # Numerous Field CleanUp and Standardization of field format
+            ##############################
+
+            msgLog = f'Success processRedFurShark ETL Routine'
+            logging.info(logMsg, exc_info=True)
+
+            return combinedAllCountsDF
+
+        except Exception as e:
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - procesRedFurShark: {e}'
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
 
 def processRedFurShark(inDF, etlInstance, dmInstance):
     """
@@ -619,8 +696,8 @@ def processRedFurShark(inDF, etlInstance, dmInstance):
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, dfRedFurSharkNA, "tblPhocaSealCount", insertQuery, dmInstance)
 
-
-
+        msgLog = f'Success processRedFurShark ETL Routine'
+        logging.info(logMsg, exc_info=True)
 
         return combinedAllCountsDF
 
