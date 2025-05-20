@@ -61,9 +61,9 @@ class etl_PINNElephant:
             outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
             ######
-            # Process Resights Form - STOPPED HERE
+            # Process Resights Form
             ######
-            outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFResights = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
 
 
 
@@ -375,13 +375,11 @@ class etl_PINNElephant:
             # Return Survey with the Regional and EventID Defined
             # Use existing outDFEvent dataframe and the already imported outDFEventsLU
 
-            outDFEvent.insert(0, "EventID", None)
+            # Define the EventID and Visibility fields via join on the ParentGlobalID - GlobalID join
+            outDFEventwGlIDwEventID = pd.merge(outDFSurvey, outDFEventsLU,
+                                               how='left', left_on="GlobalID",
+                                               right_on="GlobalID", suffixes=("_src", "_lk"))
 
-            # Lookup the EventID value via SubSiteCode
-            outDFEventwGlIDwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
-                                                                       "GlobalID", "EventID",
-                                                                       outDFSurvey, "GlobalID",
-                                                                       "EventID")
             # Subset to only the Event Field to be retained for down stream processing
             outDFEventwGlIDwEventID2 = outDFEventwGlIDwEventID[['EventID', 'GlobalID', 'StartTime']]
 
@@ -570,7 +568,7 @@ class etl_PINNElephant:
             # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
             duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
 
-            if duplicatesDF.len[0] > 0:
+            if duplicatesDF.shape[0] > 0:
 
                 duplicates_all = combinedAllCountsDF[combinedAllCountsDF.duplicated(keep=False)]
 
@@ -598,7 +596,7 @@ class etl_PINNElephant:
 
             outRedFurShark = processRedFurShark(outDFCountswEventID, etlInstance, dmInstance)
 
-            msgLog = f'Success process_Counts ETL Routines'
+            logMsg = f'Success process_Counts ETL Routines'
             logging.info(logMsg, exc_info=True)
 
             return combinedAllCountsDF
@@ -628,30 +626,68 @@ class etl_PINNElephant:
             # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
             inDF = None
             for key, df in outDFDic.items():
-                if 'countsrepeats' in key:
+                if 'resightsrepeats' in key:
                     inDF = df
                     break
 
-            #STOPPED HERE 5/15/2025 KRS
-            outDFSubset = inDF[["Sub Site",	"Bull", "SA4","SA3", "SA2", "SA1", "Other SA", "Cow", "Pup", "Dead Pup",
-                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "ZALOPHUS", "Other", "Define Other",
-                                "Specify other.", "Red Seal", "Shark Bite", "ParentGlobalID", "CreationDate"]].rename(
+            outDFSubset = inDF[["Sub Site", "Maturity", "Sex", "ConditionCode", "Dye Number", "Dye Code", "Left Color",
+                                "Left Tag #", "Left Position", "Left Tag Code", "Right Color", "Right Tag #",
+                                "Right Position", "Right Tag Code", "Bull/Cow Status", "Pup Size", "Comments",
+                                "photonameleft_name", "photonameright_name", "CreationDate", "ParentGlobalID"]].rename(
                 columns={"Sub Site": "LocationID",
-                         "Other SA": "OtherSA",
-                         "Pup": "EPUP",
-                         "Dead Pup": "DEPUP",
-                         "PHOCA": "ADULT",
-                         "PHOCA Pup": "HPUP",
-                         "ZALOPHUS": "ZAL",
-                         "Define Other": "DefineOther",
-                         "Specify other.": "SpecifyOther",
-                         "Red Seal": "RedFurPhoca",
-                         "Shark Bite": "SharkBitePhoca",
+                         "Maturity": "MatureCode",
+                         "Dye Number": "Dye",
+                         "Dye Code": "DyeCode",
+                         "Left Color": "LtagColor",
+                         "Left Tag #": "LtagNo",
+                         "Left Position": "LtagPosn",
+                         "Left Tag Code": "LtagCode",
+                         "Right Color": "RtagColor",
+                         "Right Tag #": "RtagNo",
+                         "Right Position": "RtagPosn",
+                         "Right Tag Code": "RtagCode",
+                         "Bull/Cow Status": "ReproductiveStatusCode",
+                         "Pup Size": "PupSize",
+                         "photonameleft_name": "PhotoNameLeft",
+                         "photonameright_name": "PhotoNameRight",
                          "CreationDate": "CreatedDate"})
 
             ##############################
             # Numerous Field CleanUp and Standardization of field format
             ##############################
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ["LocationID", "MaturityCode", "Sex", "ConditionCode", "Dye", "DyeCode",
+                                      "LtagColor", "LtagNo", "LtagPosn",
+                                      "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
+                                      "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
+                                      "Comments", "CreatedDate", "ParentGlobalID"],
+                'Type': ["int64", "object", "object", "object", "object", "object", "object", "object", "object", "int64",
+                          "object", "object", "object", "int64", "object", "object",
+                          "object", "object", "object", "object", "object"],
+                'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na",
+                          "na", "na", "na", "na", "na", "na", "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na"]}
+
+            outDFResights = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+
+            # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
+            outDFResightswEventID = pd.merge(outDFResights, outDFEvents[['GlobalID', 'EventID']], how='left',
+                                             left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
+
+            ############
+            # Create the Resight  EVent Table Records - this will be an import of the 'outDFEvents'
+            ############
+
+            outDFResightEvents = processResightEvents(outDFEvents, etlInstance, dmInstance)
+
+            ############
+            # Create the Resight Records
+            ############
+
+            outDFResightRec = processResightRecords(outDFResightswEventID, etlInstance, dmInstance)
+
+
 
             msgLog = f'Success processRedFurShark ETL Routine'
             logging.info(logMsg, exc_info=True)
@@ -696,10 +732,10 @@ def processRedFurShark(inDF, etlInstance, dmInstance):
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, dfRedFurSharkNA, "tblPhocaSealCount", insertQuery, dmInstance)
 
-        msgLog = f'Success processRedFurShark ETL Routine'
+        logMsg = f'Success processRedFurShark ETL Routine'
         logging.info(logMsg, exc_info=True)
 
-        return combinedAllCountsDF
+        return dfRedFurSharkNA
 
     except Exception as e:
 
@@ -897,4 +933,103 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
+def processResightEvents(inDF, etlInstance, dmInstance):
+    """
+    Define the Resight Events Table (i.e. tblResightEvents) and Append.  Using the already appended Event/Survey
+    dataframe to define.
 
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return:dfResightEvents Dataframe with records appended
+    """
+
+    try:
+
+        # Read in the Elephant Events Table to get the Visibility and Season value for the event
+        inQuery = (f"SELECT tblElephantEvents.EventID, tblElephantEvents.Visibility, tblElephantEvents.Season, "
+                   f"tblElephantEvents.ParkCode, tblElephantEvents.Comments, tblElephantEvents.CreatedDate"
+                   f" FROM tblElephantEvents;")
+
+        # Import Events
+        outDFElephantEvents = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Merge on the Event Data Frame to get the Visibility and Season from the ElephantEvents table
+        inDFwVisSeason = pd.merge(inDF, outDFElephantEvents[['EventID', 'Visibility', 'Season', 'ParkCode',
+                                                             'CreatedDate', 'Comments']]
+                                  , how='left', left_on="EventID", right_on="EventID", suffixes=("_src", "_lk"))
+
+        # Subset to field to append
+        inDFwVisSeasonAppend = inDFwVisSeason[['EventID', 'Visibility', 'Season', 'ParkCode', 'CreatedDate',
+                                               'Comments']]
+
+        # Append to the 'tblResightEvents' table
+        insertQuery = (f'INSERT INTO tblResightEvents (EventID, Visibility, Season, ParkCode, CreatedDate, Comments)'
+                       f' VALUES (?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, inDFwVisSeasonAppend, "tblResightEvents", insertQuery, dmInstance)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - processResightEvents."
+        logging.info(logMsg)
+
+        return inDFwVisSeasonAppend
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processResightEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def processResightRecords(inDF, etlInstance, dmInstance):
+    """
+    Define the Resight Record Table (i.e. tblResights) and Append
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outDFResightRec: Data Frame with the append records
+    """
+
+    try:
+
+        # Subset to field to append
+        inDFResightRec= inDF[["EventID", "LocationID", "MatureCode", "ConditionCode", "Sex", "Dye", "DyeCode",
+                                      "LtagColor", "LtagNo", "LtagPosn",
+                                      "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
+                                      "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
+                                      "Comments", "CreatedDate"]]
+
+        # Update  ConditionCode DyeCode, LtagColor, LtagCode, RtagColor, RtagCode, ReproductiveStatusCode, and PupSize
+        # where is Null to None?
+        fields_to_update = ['ConditionCode', 'DyeCode', 'LtagColor', 'LtagCode', 'RtagColor', 'RtagCode',
+                            'ReproductiveStatusCode', 'PupSize']
+
+        for field in fields_to_update:
+            inDFResightRec[field] = inDFResightRec[field].where(inDFResightRec[field].notna(), None)
+
+        # Append to the 'tblResights' table
+        insertQuery = (f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
+                       f'LtagColor,'
+                       f' LtagNo, LtagPosn, LtagCode, RtagColor, RtagNo, RtagPosn, RtagCode, ReproductiveStatusCode, '
+                       f' PupSize, PhotoNameLeft, PhotoNameRight, Comments, CreatedDate)'
+                       f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, inDFResightRec, "tblResights", insertQuery, dmInstance)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - processResightRecords."
+        logging.info(logMsg)
+
+        return inDFResightRec
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processResightRecords: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
