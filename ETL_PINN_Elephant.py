@@ -194,6 +194,9 @@ class etl_PINNElephant:
 
             outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFEvent)
 
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            outDFSurvey = outDFSurvey.replace([np.nan, 'nan'], None)
+
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblEvents (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
@@ -353,6 +356,9 @@ class etl_PINNElephant:
             dfElephantEvents_append = dfElephantEvents_append.drop(
                 columns=['EventID_lk', 'ID_lk', 'DeviceCode', 'DeviceName', 'Notes']
             )
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            dfElephantEvents_append = dfElephantEvents_append.replace([np.nan, 'nan'], None)
 
             # Append the Elephant Event Records
             insertQuery = (f'INSERT INTO tblElephantEvents (CollectionDeviceID, EventID, ParkCode, Season, Visibility, '
@@ -581,7 +587,8 @@ class etl_PINNElephant:
                 msgLog = f'Duplicate Records in the Counts Data Frame to be appended see export - {outPath}'
                 logging.critical(logMsg, exc_info=True)
 
-
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            combinedAllCountsDF = combinedAllCountsDF.replace([np.nan, 'nan'], None)
 
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
@@ -687,15 +694,13 @@ class etl_PINNElephant:
 
             outDFResightRec = processResightRecords(outDFResightswEventID, etlInstance, dmInstance)
 
-
-
-            msgLog = f'Success processRedFurShark ETL Routine'
+            logMsg = f'Success process_Resights ETL Routine'
             logging.info(logMsg, exc_info=True)
 
             return combinedAllCountsDF
 
         except Exception as e:
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - procesRedFurShark: {e}'
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Resights: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
@@ -964,12 +969,15 @@ def processResightEvents(inDF, etlInstance, dmInstance):
         inDFwVisSeasonAppend = inDFwVisSeason[['EventID', 'Visibility', 'Season', 'ParkCode', 'CreatedDate',
                                                'Comments']]
 
+        # Update any 'nan' string or np.nan values to None to consistently handle null values.
+        inDFwVisSeasonAppend2 = inDFwVisSeasonAppend.replace([np.nan, 'nan'], None)
+
         # Append to the 'tblResightEvents' table
         insertQuery = (f'INSERT INTO tblResightEvents (EventID, Visibility, Season, ParkCode, CreatedDate, Comments)'
                        f' VALUES (?, ?, ?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-        dm.generalDMClass.appendDataSet(cnxn, inDFwVisSeasonAppend, "tblResightEvents", insertQuery, dmInstance)
+        dm.generalDMClass.appendDataSet(cnxn, inDFwVisSeasonAppend2, "tblResightEvents", insertQuery, dmInstance)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - processResightEvents."
         logging.info(logMsg)
@@ -1004,13 +1012,8 @@ def processResightRecords(inDF, etlInstance, dmInstance):
                                       "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
                                       "Comments", "CreatedDate"]]
 
-        # Update  ConditionCode DyeCode, LtagColor, LtagCode, RtagColor, RtagCode, ReproductiveStatusCode, and PupSize
-        # where is Null to None?
-        fields_to_update = ['ConditionCode', 'DyeCode', 'LtagColor', 'LtagCode', 'RtagColor', 'RtagCode',
-                            'ReproductiveStatusCode', 'PupSize']
-
-        for field in fields_to_update:
-            inDFResightRec[field] = inDFResightRec[field].where(inDFResightRec[field].notna(), None)
+        # Update any 'nan' string or np.nan values to None to consistently handle null values.
+        inDFResightRec2 = inDFResightRec.replace([np.nan, 'nan'], None)
 
         # Append to the 'tblResights' table
         insertQuery = (f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
@@ -1020,7 +1023,7 @@ def processResightRecords(inDF, etlInstance, dmInstance):
                        f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-        dm.generalDMClass.appendDataSet(cnxn, inDFResightRec, "tblResights", insertQuery, dmInstance)
+        dm.generalDMClass.appendDataSet(cnxn, inDFResightRec2, "tblResights", insertQuery, dmInstance)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - processResightRecords."
         logging.info(logMsg)
