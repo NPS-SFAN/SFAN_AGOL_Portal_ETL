@@ -1015,6 +1015,12 @@ def processResightRecords(inDF, etlInstance, dmInstance):
         # Update any 'nan' string or np.nan values to None to consistently handle null values.
         inDFResightRec2 = inDFResightRec.replace([np.nan, 'nan'], None)
 
+        # In LtagNo and RtagNo fields change any lower case text to upper case
+        for field in ['LtagNo', 'RtagNo']:
+            inDFResightRec2[field] = inDFResightRec2[field].apply(
+                lambda x: x.upper() if isinstance(x, str) else x
+            )
+
         # Append to the 'tblResights' table
         insertQuery = (f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
                        f'LtagColor,'
