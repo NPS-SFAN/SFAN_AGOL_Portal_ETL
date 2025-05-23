@@ -65,13 +65,10 @@ class etl_PINNElephant:
             ######
             outDFResights = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
 
-
-
             ######
             # Process Observations Form
             ######
-            # outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
-
+            outDFDisturbance = etl_PINNElephant.process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance)
 
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -697,10 +694,101 @@ class etl_PINNElephant:
             logMsg = f'Success process_Resights ETL Routine'
             logging.info(logMsg, exc_info=True)
 
-            return combinedAllCountsDF
+            return outDFResightRec
 
         except Exception as e:
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_Resights: {e}'
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Resights: {e}'
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+    def process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance):
+        """
+        ETL routine for Disturbance Form
+        This information on this form is pushed to the following tables:
+        tblDisturbance and tblDisturbanceBehave
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:String denoting Success or Failed
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'disturbancerepeat' in key:
+                    inDF = df
+                    break
+
+            outDFSubset = inDF[["Site", "Sub Site", "Start Time Disturbance", "Disturbance Source",
+                                "Disturbance Specific Source", "Number of Disturbance Source", "Response",
+                                "Count Before (Total Seals)", "# Remaing Adults", "# Remaining Pups",
+                                "# Flushed (Total Seals)", "# Pups Flushed", "# Pups Left Alone", "Did seals return",
+                                "Rehaul Time", "Where Rehaul", "Comments", "CreationDate", "ParentGlobalID"
+                                ]].rename(
+                columns={"Sub Site": "LocationID",
+                         "Start Time Disturbance": "DisturbanceTime",
+                         "Disturbance Source": "Source",
+                         "Disturbance Specific Source": "SpecificSource",
+                         "Number of Disturbance Source": "DisturbanceNumber",
+                         "Count Before (Total Seals)": "CountBefore",
+                         "# Remaing Adults": "RemainOnSite",
+                         "# Remaining Pups": "PupsRemain",
+                         "# Flushed (Total Seals)": "Flush",
+                         "# Pups Flushed": "PupsFlush",
+                         "# Pups Left Alone": "PupsAlone",
+                         "Did seals return": "Return",
+                         "Rehaul Time": "RehaulTime",
+                         "Where Rehaul": "WhereRehaul",
+                         "CreationDate": "CreatedDate"})
+
+            ##############################
+            # Numerous Field CleanUp and Standardization of field format
+            ##############################
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ["Site", "LocationID", "DisturbanceTime", "Source", "SpecificSource", "DisturbanceNumber",
+                                      "Response", "CountBefore", "RemainOnSite", "PupsRemain", "Flush", "PupsFlush",
+                                      "PupsAlone", "Return", "RehaulTime", "WhereRehaul", "Comments", "CreatedDate",
+                                      "ParentGlobalID"],
+
+                            'Type': ["object", "int64", "datetime64", "object", "object", "int64",
+                                      "object", "int64", "int64", "int64", "int64", "int64",
+                                      "int64", "object", "datetime64", "object", "object", "datetime64", "object"],
+
+                            'DateTimeFormat': ["na", "na", "na", "na", "na", "na",
+                                      "na", "na", "na", "na", "na", "na",
+                                      "na", "na", "%H:%M", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na"]}
+
+            outDFDist = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic,
+                                                                 inDF=outDFSubset)
+
+            # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
+            outDFDistwEventID = pd.merge(outDFDist, outDFEvents[['GlobalID', 'EventID']], how='left',
+                                             left_on="ParentGlobalID", right_on="GlobalID",
+                                             suffixes=("_src", "_lk"))
+
+            ############
+            # Create the DisturbanceTable Records
+            ############
+            outDFDistRec = processDistRec(outDFDistwEventID, etlInstance, dmInstance)
+
+            ############
+            # Create the tblDisturbanceBehav Records
+            ############
+            outDFDistBehave = processDistBehavior(outDFDistwEventID, etlInstance, dmInstance)
+
+            logMsg = f'Success process_Disturbance ETL Routine'
+            logging.info(logMsg, exc_info=True)
+
+            return "Success"
+
+        except Exception as e:
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Disturbance: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
@@ -938,6 +1026,8 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
+
+
 def processResightEvents(inDF, etlInstance, dmInstance):
     """
     Define the Resight Events Table (i.e. tblResightEvents) and Append.  Using the already appended Event/Survey
@@ -991,7 +1081,6 @@ def processResightEvents(inDF, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
-
 def processResightRecords(inDF, etlInstance, dmInstance):
     """
     Define the Resight Record Table (i.e. tblResights) and Append
@@ -1006,11 +1095,11 @@ def processResightRecords(inDF, etlInstance, dmInstance):
     try:
 
         # Subset to field to append
-        inDFResightRec= inDF[["EventID", "LocationID", "MatureCode", "ConditionCode", "Sex", "Dye", "DyeCode",
-                                      "LtagColor", "LtagNo", "LtagPosn",
-                                      "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
-                                      "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
-                                      "Comments", "CreatedDate"]]
+        inDFResightRec = inDF[["EventID", "LocationID", "MatureCode", "ConditionCode", "Sex", "Dye", "DyeCode",
+                               "LtagColor", "LtagNo", "LtagPosn",
+                               "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
+                               "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
+                               "Comments", "CreatedDate"]]
 
         # Update any 'nan' string or np.nan values to None to consistently handle null values.
         inDFResightRec2 = inDFResightRec.replace([np.nan, 'nan'], None)
@@ -1022,11 +1111,12 @@ def processResightRecords(inDF, etlInstance, dmInstance):
             )
 
         # Append to the 'tblResights' table
-        insertQuery = (f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
-                       f'LtagColor,'
-                       f' LtagNo, LtagPosn, LtagCode, RtagColor, RtagNo, RtagPosn, RtagCode, ReproductiveStatusCode, '
-                       f' PupSize, PhotoNameLeft, PhotoNameRight, Comments, CreatedDate)'
-                       f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        insertQuery = (
+            f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
+            f'LtagColor,'
+            f' LtagNo, LtagPosn, LtagCode, RtagColor, RtagNo, RtagPosn, RtagCode, ReproductiveStatusCode, '
+            f' PupSize, PhotoNameLeft, PhotoNameRight, Comments, CreatedDate)'
+            f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, inDFResightRec2, "tblResights", insertQuery, dmInstance)
@@ -1039,6 +1129,106 @@ def processResightRecords(inDF, etlInstance, dmInstance):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processResightRecords: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def processDistRec(inDF, etlInstance, dmInstance):
+    """
+    Define the Parent Disturbance Records and append to tblDisturbances
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outDFDistRec: Data Frame with the appended records
+    """
+
+    try:
+
+        # Subset to field to append
+        inDFDistRec= inDF[["EventID", "DisturbanceTime", "Source", "SpecificSource", "DisturbanceNumber",
+                              "CreatedDate", "GlobalID"]]
+
+        # Update any 'nan' string or np.nan values to None to consistently handle null values.
+        inDFDistRec2 = inDFDistRec.replace([np.nan, 'nan'], None)
+
+        # Append to the 'tblResights' table
+        insertQuery = (f'INSERT INTO tblDisturbances (EventID, DisturbanceTime, Source, SpecificSource, '
+                       f'DisturbanceNumber, CreatedDate, GlobalID)'
+                       f' VALUES (?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, inDFDistRec2, "tblDisturbances", insertQuery, dmInstance)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - processDistRec."
+        logging.info(logMsg)
+
+        return inDFDistRec2
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processDistRec: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def processDistBehavior(inDF, etlInstance, dmInstance):
+    """
+    Define the Disturbance Beharior Records and append to tblDisturbanceBehav
+
+    :param inDF: Data Frame being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outDFDistRec: Data Frame with the appended records
+    """
+
+    try:
+
+        # Subset
+        inDFDistBehave = inDF[["LocationID", "Response", "CountBefore", "RemainOnSite", "PupsRemain", "Flush", "PupsFlush",
+                               "PupsAlone", "Return", "RehaulTime", "WhereRehaul", "Comments", "CreatedDate",
+                               "GlobalID"]]
+
+        # Connect to the Database import the tblDisturbance - need to get the DisturbanceID foreign key for
+        # records just pushed in 'processDistRec' function. Joining on "DisturbanceTime", "Source", "SpecificSource",
+        #                                                   "DisturbanceNumber"
+        inQuery = (f"SELECT tblDisturbances.DisturbanceID, tblDisturbances.EventID, tblDisturbances.DisturbanceTime,"
+                   f"tblDisturbances.Source, tblDisturbances.SpecificSource, tblDisturbances.DisturbanceNumber, "
+                   f"tblDisturbances.GlobalID FROM tblDisturbances;")
+
+        outDFDisturbanceAll = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        outDFDisturbanceAll2 = pd.merge(inDFDistBehave, outDFDisturbanceAll[["GlobalID", "DisturbanceID"]], how='left',
+                                         left_on=["GlobalID"],
+                                         right_on=["GlobalID"], suffixes=("_src", "_lk"))
+
+        ######
+        # Drop fields
+        outDFDisturbanceAll2 = outDFDisturbanceAll2.drop(columns=["GlobalID"])
+
+        # Update any 'nan' string or np.nan values to None to consistently handle null values.
+        outDFDisturbanceAll2 = outDFDisturbanceAll2.replace([np.nan, 'nan'], None)
+
+        # Append to the 'tblDisturbances' table
+        insertQuery = (f'INSERT INTO tblDisturbanceBehav (LocationID, Response, CountBefore, RemainOnSite, PupsRemain,'
+                       f' Flush, PupsFlush, PupsAlone, Return, '
+                       f'RehaulTime, WhereRehaul, Comments, CreatedDate, DisturbanceID)'
+                       f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, outDFDisturbanceAll2, "tblDisturbanceBehav", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - processDistBeahvior"
+        logging.info(logMsg)
+
+        return outDFDisturbanceAll2
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - processDistRec: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
