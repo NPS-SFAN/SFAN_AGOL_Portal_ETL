@@ -12,10 +12,10 @@ Note: When behind the NPS firewall at the office I seemingly have to use OAuth a
 ArcGISPro credentials with the native ArcGISPro python environment I'm not able to retain my permission (i.e. not able
 to download Feature Layers I own).   Conversely, when VPN connected at home the ArcGISPro credentials work fine.
 
-As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.
-As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.
+As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS
+As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
-As of 5/x/2025 - Pinnipeds Elephant Seal ETL workflow in process
+As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow in process developed - KRS
 
 Output:
 
@@ -44,10 +44,10 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol/Item Being Processes
-protocol = 'PINN-Elephant'   #(SNPLPORE|Salmonids-EFish|PCM-LocationsManual|PINN-Elephant)
+protocol = 'Salmonids-Smolts'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\PORE_SNPL_BE_20250425.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\PORE_SNPL_FrontEnd_20250425.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_202506 - Copy.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_FE_202506.accdb'
 
 # Year Being Processed
 inYear = 2025
@@ -59,7 +59,7 @@ inYear = 2025
 cloudPath = f"https://nps.maps.arcgis.com"   #AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "a9003e73a4d847e8b18e64a7a0b9eea9"
+layerID = "4aa0012a61fc4a3bb5f32e13b134a84a"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
@@ -74,12 +74,12 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2025'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2025\Smolts'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
-# want/need to download each run of script, Hard Coded paths will need to be updates in the 'ArcGIS_API.py' -
+# want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
 # processFeatureLayer method when set to 'No'
-AGOLDownload = 'Yes'  # ('Yes'|'No')
+AGOLDownload = 'No'  # ('Yes'|'No')
 
 def main():
     logger = logging.getLogger(__name__)
