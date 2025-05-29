@@ -276,8 +276,6 @@ class etl_SalmonidsSmolts:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-
-
 def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
     """
     Define Observers for Salmonids
