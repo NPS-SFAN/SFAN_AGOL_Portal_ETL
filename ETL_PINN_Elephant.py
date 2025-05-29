@@ -79,7 +79,7 @@ class etl_PINNElephant:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_ETLSNPLPORE: {e}'
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_PINNElephant: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
