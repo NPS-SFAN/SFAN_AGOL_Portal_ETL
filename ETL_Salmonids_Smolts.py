@@ -44,15 +44,15 @@ class etl_SalmonidsSmolts:
             ######
             # ETL Event
             ######
-            outDFEventSurvey = etl_SalmonidsSmolts.process_Event_Smolts(outDFDic, etlInstance, dmInstance)
-            outDFEvent = outDFEventSurvey[0]
+            outMethod = etl_SalmonidsSmolts.process_Event_Smolts(outDFDic, etlInstance, dmInstance)
+            outDFEvent = outMethod[0]
 
             ######
             # ETL Measurements
             ######
-            outDFEventSurvey = etl_SalmonidsSmolts.process_repeat_Smolts(outDFDic, outDFEvent, etlInstance,
+            outMethod = etl_SalmonidsSmolts.process_repeat_Smolts(outDFDic, outDFEvent, etlInstance,
                                                                                dmInstance)
-            outDFEvent = outDFEventSurvey[0]
+            outDFEvent = outMethod[0]
 
 
 
@@ -98,7 +98,7 @@ class etl_SalmonidsSmolts:
                                         'Define Observers(s)': 'Observers',
                                         'CreationDate': 'CreatedDate',
                                         'Creator': 'CreatedBy',
-                                        'Trap Status': 'Trap Status',
+                                        'Trap Status': 'TrapStatus',
                                         'Device': 'FieldDevice',
                                         'Start Time': 'StartTime',
                                         'End Time': 'EndTime'}, inplace=True)
@@ -115,11 +115,8 @@ class etl_SalmonidsSmolts:
             # Change 'CreatedDate' to Date Time Format
             outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
 
-            # Insert 'EventID' field - will populated via join on the 'GlobalID' field post join of records to tblEvents
-            outDFSubset.insert(1, "EventID", None)
-
             # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
-            outDFSubset.insert(2, "ProtocolID", 2)
+            outDFSubset.insert(1, "ProtocolID", 2)
 
             fieldLen = outDFSubset.shape[1]
             # Insert 'DataProcesingLevelID' = 1
@@ -162,17 +159,19 @@ class etl_SalmonidsSmolts:
 
             outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
-            # Rare cases if there are 'Other' values in the 'LocationID' or 'StreamID' will need to exit processing
-            # because these field will require a definition in related tables
+            # If there are 'Other' values in the 'LocationID', 'StreamID',and or other_Device
+            # fields will need to define these in the lookup table before proceeded - will exit processing
 
-            outOtherStatus = process_OtherValues(outDFSubset2, ['other_Location', 'other_Stream'], etlInstance)
+            outOtherStatus = process_OtherValues(outDFSubset2, ['other_Location', 'other_Stream',
+                                                                'other_Device'], etlInstance)
 
             # Retain only the fields going to tlbEvents
             outDFEventsOnly = outDFSubset2[['GlobalID', 'FieldDevice', 'StartDate', 'StartTime', 'EndTime',
                                             'FieldSeason', 'ProjectCode', 'ProjectDescription', 'StreamID',
                                             'CreatedDate', 'CreatedBy', 'DataProcessingLevelID',
                                             'DataProcessingLevelDate', 'DataProcessingLevelUser', 'SurveyType']]
-            # Append outDFSubset2 to 'tbl_Events'
+
+            # Append outDFEventsOnly to 'tbl_Events'
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblEvents (GlobalID, FieldDevice, StartDate, StartTime, EndTime, FieldSeason,'
                            f'ProjectCode, ProjectDescription, StreamID, CreatedDate, CreatedBy, DataProcessingLevelID,'
@@ -182,39 +181,40 @@ class etl_SalmonidsSmolts:
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFEventsOnly, "tblEvents", insertQuery, dmInstance)
 
-            ##################  STOPPED HERE
+            ##################
+            # Add the EventID via lookup field to the outDFSubset2
+            ################
+
+            # Read in the tluDevices lookup table
+            # Import Event Table to define the EventID via the GlobalID
+            inQuery = f"SELECT tblEvents.* FROM tblEvents;"
+
+            # Import Event Table with defined EventID
+            outDFwEVentID = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
+            outDFSubSet2wEventID = pd.merge(outDFSubset2, outDFwEVentID[['GlobalID', 'EventID']], how='left',
+                                             left_on="GlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
+
+            ##################
             # Define tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
             # Lookup table for contacts is tluObserver
             ##################
 
-            outContactsDF = process_SalmonidsContacts(outDFSubset2, etlInstance, dmInstance)
+            outContactsDF = process_SalmonidsContacts(outDFSubSet2wEventID, etlInstance, dmInstance)
 
-            # Retain Needed fields
-            outContactsDF.drop(columns={'Observers'}, inplace=True)
+            #########################
+            # Process tblSmoltSurveys
+            #########################
 
-            # Insert the 'CreateDate' field
-            from datetime import datetime
-            dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
-            outContactsDF.insert(2, 'CreatedDate', dateNow)
+            outSurveyDF = process_SalmonidsSurvey(outDFSubSet2wEventID, etlInstance, dmInstance)
 
-            insertQuery = (f'INSERT INTO tblEventObservers (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
-
-            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            #Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outContactsDF, "tblEventObservers", insertQuery,
-                                            dmInstance)
-
-            logMsg = f"Success ETL Event/Survey Form ERL_Salmonids_Electro.py - process_Event"
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logMsg = f"Success ETL Event/Survey Form ERL_Salmonids_Electro.py - process_Event_Smolts"
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
-            return outDFEvent2, outDFSurvey, outContactsDF
-
-            ##############################
-            # Process tblSmoltSurvey table
-            ##############################
+            return outDFSubSet2wEventID, outSurveyDF, outContactsDF
 
 
         except Exception as e:
@@ -228,7 +228,7 @@ class etl_SalmonidsSmolts:
 
         """
         ETL routine for the Measurements form data in the Smolt Survey 123 form.
-        Data is processed to table 'tblSmoltMeasurements - If measurment of PITTag data', else going to the
+        Data is processed to table 'tblSmoltMeasurements - If measurement of PITTag data', else going to the
         tblSmoltCounts table.  TB further defined - 5/29/2025
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
@@ -291,19 +291,16 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
     try:
 
-        inDFContacts = inDF[['GlobalID', 'Observers', 'other_Observer']]
+        inDFContacts = inDF[['GlobalID', 'EventID', 'Observers', 'other_Observer']]
         inDFContacts.rename(columns={'other_Observer': 'Other'}, inplace=True)
 
-        inDFContacts.insert(0, "EventID", None)
-
-        # Lookup the EventID field via the GlobalID  - STOPPED HERE 5/29/2025
-
-
         #####################################
-        # Parse the 'Observers' field on ','
+        # Parse the 'Observers' field on ','.
+
         # First remove the records where Observers == 'other'
         inObsNotOther = inDFContacts[inDFContacts['Observers'] != 'other']
-        inDFObserversParsed = inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(',')).explode('Observers')
+        inDFObserversParsed = (inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(','))
+                               .explode('Observers'))
         # Drop any records with 'Other' some cases have defined people and then also other
         inDFObserversParsed2 = inDFObserversParsed[inDFObserversParsed['Observers'] != 'other']
         # Drop field 'other'
@@ -314,8 +311,8 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
 
-        # Define OBSCODE
-        inDFObserversParsed3.insert(2, 'OBSCODE', None)
+        # Define OBSCODE which is already defined in the Obserer Field
+        inDFObserversParsed3['OBSCODE']= inDFObserversParsed3['Observers']
 
         # Import the tluObservers tables
         inQuery = f"SELECT * FROM tluObservers"
@@ -323,9 +320,11 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
         # Define the OBSCODE via a join lookup approach
         inDFObserversDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFtluObservers,
-                                                             "OBSCODE", "OBSCODE",
-                                                             inDFObserversParsed3, "Observers",
-                                                             "OBSCODE")
+                                                                      "OBSCODE", "OBSCODE",
+                                                                      inDFObserversParsed3, "Observers",
+                                                                      "OBSCODE")
+
+        inDFObserversDefined = inDFObserversDefined[['GlobalID', 'EventID', 'Observers', 'OBSCODE']]
 
         ##################################
         # Parse the 'Other' field on ','
@@ -358,8 +357,10 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
             # Insert 'OBSCODE to be defined
             inDFOthersParsed3.insert(1, "OBSCODE", None)
 
+            inDFOthersParsed3 = inDFOthersParsed3.replace([np.nan, 'nan', 'None'], None)
+
             # Retain only records that aren't null
-            inDFOthersParsed3_subset = inDFOthersParsed3[inDFOthersParsed3['Observers'].notna()]
+            inDFOthersParsed3_subset = inDFOthersParsed3[inDFOthersParsed3['Observers'].notnull()]
 
             # Add Field checking if '_' is in field Observers
             inDFOthersParsed3_subset['Underscore'] = inDFOthersParsed3_subset['Observers'].apply(lambda x: 'Yes' if '_' in x else 'No')
@@ -380,7 +381,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
                 lambda row: row['Observers'].split('_')[1] if row['Underscore'] == 'Yes' else row['Last_Name'], axis=1)
             # Parse the name after the ' ' into the 'Last_Name' field if 'Underscore' equals 'No'
             inDFOthersParsed3_subset['Last_Name'] = inDFOthersParsed3_subset.apply(
-                lambda row: row['Observers'].split(' ')[1] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
+                lambda row: row['Observers'].split(' ')[0] if row['Underscore'] == 'No' else row['Last_Name'], axis=1)
 
             # Define the OBSCODE via a join on the First and Last Name fields in dataframes 'inDFOthersParsed3_subset'
             # and outDFtluObservers
@@ -389,7 +390,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
                 right_on=['LASTNAME', 'FIRSTNAME'], how='left', suffixes=('_x', ''))
 
             # Subset to the needed fields
-            mergedOtherDf2 = mergedOtherDf[['EventID', 'Observers', 'OBSCODE']]
+            mergedOtherDf2 = mergedOtherDf[['GlobalID', 'EventID', 'Observers', 'OBSCODE']]
 
             # Append 'mergedOtherDf2 with the  'inDFObserversDefined' dataframe
             inDFObserverDefinedAll = pd.concat([inDFObserversDefined, mergedOtherDf2],  axis=0)
@@ -420,45 +421,60 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
             logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
                       f'Exiting ETL_Salmonids_Electro.py - process_SalmonidsContacts with out full completion.')
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+
             logging.warning(logMsg)
             exit()
 
-        logMsg = f"Success ETL_Salmonids_Electro.py - processSalmonidsContacts."
-        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        # Retain Needed fields
+        inDFObserverDefinedAll.drop(columns={'GlobalID', 'Observers'}, inplace=True)
+
+        # Insert the 'CreateDate' field
+        from datetime import datetime
+        dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+        inDFObserverDefinedAll.insert(2, 'CreatedDate', dateNow)
+
+        insertQuery = f'INSERT INTO tblEventObservers (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)'
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        # Append the Contacts to the xref_EventContacts table
+        dm.generalDMClass.appendDataSet(cnxn, inDFObserverDefinedAll, "tblEventObservers", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success ETL_Salmonids_Smolts.py - processSalmonidsContacts."
         logging.info(logMsg)
 
         return inDFObserverDefinedAll
 
     except Exception as e:
 
-        logMsg = f'WARNING ERROR  - ETL_Salmonids_Electro.py - processSalmonidsContacts: {e}'
+        logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - processSalmonidsContacts: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
 def process_OtherValues(inDF, fieldList, etlInstance):
     """
-    Define Observers for Salmonids
-    Harvest Multi-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
-    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+    Checking for values (i.e. not None, Nan) in the other fields for Location, StreamID, and or Devices that are in need of
+    definition in the associated lookup tables in the Salmonids database.  Will export records with other values in need
+    of definition to a .csv file and will exit the script.
+
 
     :param inDF: Data Frame being processed
-    :param fieldList: List with the fields to be checked
+    :param fieldList: List with the other fields to be checked
     :param etlInstance: Data Management instance
 
-    :return:
+    :return: String "Success" or exit script
     """
 
     try:
 
-        # Subset rows where any field in fieldList is null (None or NaN)
+        # Subset rows where any field in fieldList is not null (None or NaN)
         subsetDF = inDF[inDF[fieldList].notnull().any(axis=1)]
 
         # Export Records in need of Definition in the LocationID or StreamID fields
         if subsetDF.shape[0] > 0:
 
-            outPath = f'{etlInstance.outDir}\RecordsNoDefinedLocation_or_StreamID.csv'
+            outPath = f'{etlInstance.outDir}\RecordsOther NotDefined_Location_StreamID_Devices.csv'
             if os.path.exists(outPath):
                 os.remove(outPath)
 
@@ -466,9 +482,10 @@ def process_OtherValues(inDF, fieldList, etlInstance):
             subsetDF.to_csv(outPath, index=True)
 
             recCount = subsetDF.shape[0]
-            logMsg = (f'WARNING there are {recCount} records with other LocationID or StreamID field values in need '
-                      f'of definition.\rThese other values must be defined before processing can continue.\r'
-                      f'Export records in need of definition see - {outPath}.\rExiting Script')
+            logMsg = (f'WARNING there are {recCount} records with other LocationID, StreamID, Observer or Device field'
+                      f' values in need of definition.\rThese other values must be defined in the associated lookup'
+                      f'table before processing can continue.\r Exported records in need of definition see -'
+                      f' {outPath}.\rExiting Script')
 
             logging.critical(logMsg, exc_info=True)
             sys.exit()
@@ -484,3 +501,44 @@ def process_OtherValues(inDF, fieldList, etlInstance):
         logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - process_OtherValues: {e}'
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+def process_SalmonidsSurvey(inDF, etlInstance, dmInstance):
+    """
+    ETL routine to process from the main parent form {SFAN_Salmonids_Smolts_} to the tblSmoltSurveys table
+    Data is ETL'd to tblSmoltSurveys
+
+    :param inDF - Dataframe with the Subset of fields from the SFAN_Slamonids_Smolts for to be process, will be further
+    subet for the tblSmoltSurvey table.
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance:
+
+    :return:inDFAppend - dataframe that was appended to the 'tblSmoltSurvey' table.
+    """
+
+    try:
+
+        inDFAppend = inDF[['EventID', 'LocationID', 'Weather', 'StageHeight', 'WaterTemp', 'Comments', 'MarkType1',
+                           'TrapStatus', 'CreatedDate']]
+
+        insertQuery = (f'INSERT INTO tblSmoltSurveys (EventID, LocationID, Weather, StageHeight, WaterTemp, Comments,'
+                       f' MarkType1, TrapStatus, CreatedDate) VALUES'
+                       f' (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        # Append the Contacts to the xref_EventContacts table
+        dm.generalDMClass.appendDataSet(cnxn, inDFAppend, "tblSmoltSurveys", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success ETL_Salmonids_Smolts.py - process_SalmonidsSurvey."
+        logging.info(logMsg)
+
+        return inDFAppend
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - process_SalmonidsSurvey: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
