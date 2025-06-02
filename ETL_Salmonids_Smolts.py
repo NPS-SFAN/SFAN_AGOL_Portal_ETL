@@ -228,7 +228,7 @@ class etl_SalmonidsSmolts:
 
         """
         ETL routine for the Measurements form data in the Smolt Survey 123 form.
-        Data is processed to table 'tblSmoltMeasurements - If measurement of PITTag data', else going to the
+        Data is processed to table 'tblSmoltMeasurements - If measurement and or PITTag data', else going to the
         tblSmoltCounts table.  TB further defined - 5/29/2025
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
@@ -251,7 +251,13 @@ class etl_SalmonidsSmolts:
                     break
 
             # Create initial dataframe subset
-            outDFSubset = inDF[[]]
+            outDFSubset = inDF[['SpeciesCode', 'LifeStage', 'Tally', 'ForkLength_mm', 'LengthCategoryID',
+                                'TotalWeight_g', 'BagWeight_g', 'FishWeight_g', 'NewRecaptureCode', 'PITTag',
+                                'PITTagLength', 'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead', 'Scales',
+                                'Tissue', 'EnvelopeID', 'CommentsMeasurements', 'QCFlag',
+                                'Other QC Flag - please specify', 'QCNotes', 'ParentGlobalID', 'CreationDate']]
+
+            ##### STOPPED HERE 6/2/2025 KRS
 
             # Rename fields
             outDFSubset.rename(columns={'ForkLength_mm': 'ForkLength',
