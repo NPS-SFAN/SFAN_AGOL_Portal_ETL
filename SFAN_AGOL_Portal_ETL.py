@@ -15,7 +15,8 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
-As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow in process developed - KRS
+As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed - KRS
+As of 6/3/2025 - Salmonids Smolts ETL workflow developed - KRS
 
 Output:
 
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'Salmonids-Smolts'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_202506 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20250603.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_FE_202506.accdb'
 
 # Year Being Processed
@@ -79,7 +80,7 @@ outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
 # processFeatureLayer method when set to 'No'
-AGOLDownload = 'No'  # ('Yes'|'No')
+AGOLDownload = 'Yes'  # ('Yes'|'No')
 
 def main():
     logger = logging.getLogger(__name__)
