@@ -36,6 +36,9 @@ Methods/Functions to be used for Snowy Plover PORE ETL workflow.
 ETL workflow pulling the Locations Manual/Parking information from the PCM Frontend Database and exporting (i.e. ETL) as
 two Feature Layers to the AGOL/Portal.
 
+## ETL_Salmonids_Smolts.py
+Methods/Functions to be used for Salmonids Smolts ETL workflow.
+
 ## ETL_Salmonids_Electro.py
 Methods/Functions to be used for Salmonids Electrofishing ETL workflow.
 
