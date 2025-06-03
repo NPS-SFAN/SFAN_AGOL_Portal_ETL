@@ -1,6 +1,8 @@
 """
 ETL_Salmonids_Smolts.py
 Methods/Functions to be used for Salmonids Smolts ETL workflow.
+Created By: Kirk Sherrill Data Manager San Francisco Bay Area Network Inventory and Monitoring National Park Service
+Created Date: 6/3/2025
 """
 
 #Import Required Libraries
@@ -90,7 +92,7 @@ class etl_SalmonidsSmolts:
                                 'FieldSeason', 'Define Observers(s)', 'other_Observer', 'ProjectCode',
                                 'ProjectDescription', 'StreamID', 'other_Stream', 'LocationID', 'other_Location',
                                 'Weather', 'StageHeight', 'WaterTemp', 'SurveyComments', 'MarkType1', 'CreationDate',
-                                'Creator', 'Trap Status']]
+                                'Creator', 'Trap Status', 'FieldVerified']]
 
             # Rename might be best to not include in the subset operation
             outDFSubset.rename(columns={'SurveyComments': 'Comments',
@@ -100,7 +102,8 @@ class etl_SalmonidsSmolts:
                                         'Trap Status': 'TrapStatus',
                                         'Device': 'FieldDevice',
                                         'Start Time': 'StartTime',
-                                        'End Time': 'EndTime'}, inplace=True)
+                                        'End Time': 'EndTime',
+                                        'FieldVerified': 'Verified'}, inplace=True)
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             outDFSubset = outDFSubset.replace([np.nan, 'nan'], None)
@@ -112,6 +115,9 @@ class etl_SalmonidsSmolts:
             # Change 'CreatedDate' to Date Time Format
             outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
             outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate'])
+
+            # Update Yes No fields to Boolean - True, False
+            outDFSubset['Verified'] = outDFSubset['Verified'] == 'Yes'
 
             # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
             outDFSubset.insert(1, "ProtocolID", 2)
@@ -168,14 +174,16 @@ class etl_SalmonidsSmolts:
             outDFEventsOnly = outDFSubset2[['GlobalID', 'FieldDevice', 'StartDate', 'StartTime', 'EndTime',
                                             'FieldSeason', 'ProjectCode', 'ProjectDescription', 'StreamID',
                                             'CreatedDate', 'CreatedBy', 'DataProcessingLevelID',
-                                            'DataProcessingLevelDate', 'DataProcessingLevelUser', 'SurveyType']]
+                                            'DataProcessingLevelDate', 'DataProcessingLevelUser', 'SurveyType',
+                                            'Verified']]
+
 
             # Append outDFEventsOnly to 'tbl_Events'
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblEvents (GlobalID, FieldDevice, StartDate, StartTime, EndTime, FieldSeason,'
                            f'ProjectCode, ProjectDescription, StreamID, CreatedDate, CreatedBy, DataProcessingLevelID,'
-                           f'DataProcessingLevelDate, DataProcessingLevelUser, SurveyType) '
-                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                           f'DataProcessingLevelDate, DataProcessingLevelUser, SurveyType, Verified) '
+                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFEventsOnly, "tblEvents", insertQuery, dmInstance)
@@ -619,19 +627,25 @@ def process_SalmonidsSurvey(inDF, etlInstance, dmInstance):
         inDFAppend = inDF[['EventID', 'LocationID', 'Weather', 'StageHeight', 'WaterTemp', 'Comments', 'MarkType1',
                            'TrapStatus', 'CreatedDate']]
 
+        # Update any 'nan' string or np.nan values to None to consistently handle null values. Having to do a second
+        # time, not sure why the initial time didn't accomplish this conversion to None.  Might not stick post defining
+        # of field types in the dm.generalDMClass.defineFieldTypesDF upstream workflow routine.
+
+        inDFAppend2 = inDFAppend.replace([np.nan, 'nan'], None)
+
         insertQuery = (f'INSERT INTO tblSmoltSurveys (EventID, LocationID, Weather, StageHeight, WaterTemp, Comments,'
                        f' MarkType1, TrapStatus, CreatedDate) VALUES'
                        f' (?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         # Append the Contacts to the xref_EventContacts table
-        dm.generalDMClass.appendDataSet(cnxn, inDFAppend, "tblSmoltSurveys", insertQuery,
+        dm.generalDMClass.appendDataSet(cnxn, inDFAppend2, "tblSmoltSurveys", insertQuery,
                                         dmInstance)
 
         logMsg = f"Success ETL_Salmonids_Smolts.py - process_SalmonidsSurvey."
         logging.info(logMsg)
 
-        return inDFAppend
+        return inDFAppend2
 
     except Exception as e:
 
@@ -665,7 +679,7 @@ def process_Measurements(inDF, etlInstance, dmInstance):
         inDFAppend[roundTruncateList] = inDFAppend[roundTruncateList].applymap(truncate_to_2_decimal)
 
         # Update any 'nan' string or np.nan values to None to consistently handle null values. Having to do a second
-        # time, not sure why the initial time didn't accomplish this converation to None.  Might not stick post defining
+        # time, not sure why the initial time didn't accomplish this conversion to None.  Might not stick post defining
         # of field types in the dm.generalDMClass.defineFieldTypesDF upstream workflow routine.
 
         inDFAppend2 = inDFAppend.replace([np.nan, 'nan'], None)
