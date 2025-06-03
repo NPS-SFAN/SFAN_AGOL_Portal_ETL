@@ -51,15 +51,14 @@ class etl_SalmonidsSmolts:
             # ETL Measurements
             ######
             outMethod = etl_SalmonidsSmolts.process_repeat_Smolts(outDFDic, outDFEvent, etlInstance,
-                                                                               dmInstance)
-            outDFEvent = outMethod[0]
-
-
+                                                                              dmInstance)
+            if outMethod == "Success":
+                logMsg = f'Successfully finished processing - ETL_Salmonids_Smolts.py - process_ETLSmolts'
+                logging.info(logMsg, exc_info=True)
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_ETLSmolts: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - process_ETLSmolts: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
@@ -109,11 +108,10 @@ class etl_SalmonidsSmolts:
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
-            # To DateTime Field
-            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.normalize()
 
             # Change 'CreatedDate' to Date Time Format
             outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
+            outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate'])
 
             # Insert 'ProtocolID' field - setting default value to 2 - 'SFAN_IMD_Salmonids_1' see tluProtocolVersion
             outDFSubset.insert(1, "ProtocolID", 2)
@@ -163,7 +161,8 @@ class etl_SalmonidsSmolts:
             # fields will need to define these in the lookup table before proceeded - will exit processing
 
             outOtherStatus = process_OtherValues(outDFSubset2, ['other_Location', 'other_Stream',
-                                                                'other_Device'], etlInstance)
+                                                                'other_Device'], etlInstance,
+                                                            'other_Loc_Stream_Device')
 
             # Retain only the fields going to tlbEvents
             outDFEventsOnly = outDFSubset2[['GlobalID', 'FieldDevice', 'StartDate', 'StartTime', 'EndTime',
@@ -253,31 +252,123 @@ class etl_SalmonidsSmolts:
             # Create initial dataframe subset
             outDFSubset = inDF[['SpeciesCode', 'LifeStage', 'Tally', 'ForkLength_mm', 'LengthCategoryID',
                                 'TotalWeight_g', 'BagWeight_g', 'FishWeight_g', 'NewRecaptureCode', 'PITTag',
-                                'PITTagLength', 'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead', 'Scales',
+                                'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead', 'Scales',
                                 'Tissue', 'EnvelopeID', 'CommentsMeasurements', 'QCFlag',
                                 'Other QC Flag - please specify', 'QCNotes', 'ParentGlobalID', 'CreationDate']]
 
-            ##### STOPPED HERE 6/2/2025 KRS
-
             # Rename fields
-            outDFSubset.rename(columns={'ForkLength_mm': 'ForkLength',
+            outDFSubset.rename(columns={'Tally': 'FishTally',
+                                        'ForkLength_mm': 'ForkLength',
                                         'TotalWeight_g': 'TotalWeight',
                                         'BagWeight_g': 'BagWeight',
                                         'FishWeight_g': 'FishWeight',
+                                        'MarkColorMeasurements': 'MarkColor',
+                                        'CommentsMeasurements': 'Comments',
+                                        'Other QC Flag - please specify': 'OtherQCFlag',
                                         'CreationDate': 'CreatedDate'}, inplace=True)
 
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            outDFSubset = outDFSubset.replace([np.nan, 'nan'], None)
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+
+            # Change 'CreatedDate' to Date Time Format
+            outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
+
+            fieldList = ['PriorSeason', 'Injured', 'Dead', 'Scales', 'Tissue']
+
+            # Update Yes No fields to Boolean - True, False
+            for field in fieldList:
+                outDFSubset[field] = outDFSubset[field].map({'Yes': True, 'No': False})
+
+            ############################
+            # Define desired field types
+            ############################
+
+            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
+            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            fieldTypeDic = {'Field': ['SpeciesCode', 'LifeStage', 'Tally', 'ForkLength', 'LengthCategoryID',
+                                      'TotalWeight', 'BagWeight', 'FishWeight', 'NewRecaptureCode', 'PITTag',
+                                      'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead',
+                                      'Scales', 'Tissue', 'EnvelopeID', 'Comments', 'QCFlag', 'OtherQCFlag',
+                                      'QCNotes', 'ParentGlobalID', 'CreatedDate'],
 
 
-            logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                            'Type': ['object', 'object', 'int64', 'int64', 'object', 'float32', 'float32', 'float32',
+                                     'object', 'int64', 'object', 'object', 'object', 'object', 'object', 'object',
+                                     'object', 'object', 'Object', 'object', 'object', 'Object', 'datetime64'],
+
+                            'DateTimeFormat': ['na', 'na', 'na', 'na', 'na',
+                                               'na', 'na', 'na', 'na', 'na',
+                                               'na', 'na', 'na', 'na',
+                                               'na', 'na', 'na', 'na', 'na', 'na',
+                                               'na', 'na', '%m/%d/%Y %I:%M:%S %p']}
+
+            outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
+
+            # If there are 'Other' values in the 'LocationID', 'StreamID',and or other_Device
+            # fields will need to define these in the lookup table before proceeded - will exit processing
+
+            outOtherStatus = process_OtherValues(outDFSubset2, ['OtherQCFlag'], etlInstance, "OtherQCFlag")
+
+            #
+            # Define the EventID via lookup on the ParentGlobalID field and the GlobalID field in outDFEvent
+            #
+
+            # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
+            outDFSubSet2wEventID = pd.merge(outDFSubset2, outDFEvent[['GlobalID', 'EventID']], how='left',
+                                            left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
+
+            # Subset to Records going to tblSmoltMeasurements - Either has measurements in Measurements Field List or
+            # has a Pittag value
+            # Measurements fields to check for a value are - 'ForkLength', 'LengthCategoryID', 'TotalWeight',
+            # 'BagWeight', 'FishWeight', 'NewRecaptureCode', 'PITTag', 'MarkColorMeasurements'
+
+            measurementFields = ['ForkLength', 'LengthCategoryID', 'TotalWeight', 'BagWeight', 'FishWeight',
+                                 'NewRecaptureCode', 'PITTag', 'MarkColor', 'EnvelopeID']
+
+            subsetDFMeasurements = outDFSubSet2wEventID[outDFSubSet2wEventID[measurementFields].notnull().any(axis=1)]
+
+            # Use the Inverse Logic to define the Records to go to tblSmoltCounts
+            subsetDFCounts = outDFSubSet2wEventID[outDFSubSet2wEventID[measurementFields].isnull().all(axis=1)]
+
+            # QC Check - Sum of 'subsetDFMeasurements' and 'subsetDFCounts' dataframe records equal the number of
+            # records in dataframe 'outDFSubset2'
+            total_records = len(outDFSubSet2wEventID)
+            sum_subset_records = len(subsetDFMeasurements) + len(subsetDFCounts)
+
+            if total_records == sum_subset_records:
+                logMsg = f"QC Check Passed: Subsets account for all records Measurement and Counts dataframes."
+                logging.info(logMsg)
+            else:
+                logMsg = (f"WARNING QC Check Failed: Subsets total {sum_subset_records} - is not equal to the Repeat "
+                          f"Record Numbers {total_records} - Subsetting logic is not accurate. \r Exiting Script")
+                logging.critical(logMsg)
+                exit()
+
+            ######
+            # Process the Smolt Measurements
+            #####
+
+            outDFMeasurements = process_Measurements(subsetDFMeasurements, etlInstance, dmInstance)
+
+            ######
+            # Process the Smolt Counts
+            #####
+
+            outDFCounts = process_Counts(subsetDFCounts, etlInstance, dmInstance)
+
+            logMsg = f"Success ETL Salmonids_Smolts.py - process_repeat_Smolts"
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tblSummerPasses
-            return outDFMeasurements
+            return "Success"
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing: {e}'
+            logMsg = f'WARNING ERROR  ETL Salmonids_Smolts.py - process_repeat_Smolts: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
@@ -458,7 +549,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
-def process_OtherValues(inDF, fieldList, etlInstance):
+def process_OtherValues(inDF, fieldList, etlInstance, outSuffix):
     """
     Checking for values (i.e. not None, Nan) in the other fields for Location, StreamID, and or Devices that are in need of
     definition in the associated lookup tables in the Salmonids database.  Will export records with other values in need
@@ -468,6 +559,7 @@ def process_OtherValues(inDF, fieldList, etlInstance):
     :param inDF: Data Frame being processed
     :param fieldList: List with the other fields to be checked
     :param etlInstance: Data Management instance
+    :param outSuffix: Suffix to be applied to the output .csv file name.
 
     :return: String "Success" or exit script
     """
@@ -480,7 +572,7 @@ def process_OtherValues(inDF, fieldList, etlInstance):
         # Export Records in need of Definition in the LocationID or StreamID fields
         if subsetDF.shape[0] > 0:
 
-            outPath = f'{etlInstance.outDir}\RecordsOther NotDefined_Location_StreamID_Devices.csv'
+            outPath = f'{etlInstance.outDir}\RecordsOther_{outSuffix}.csv'
             if os.path.exists(outPath):
                 os.remove(outPath)
 
@@ -488,11 +580,12 @@ def process_OtherValues(inDF, fieldList, etlInstance):
             subsetDF.to_csv(outPath, index=True)
 
             recCount = subsetDF.shape[0]
-            logMsg = (f'WARNING there are {recCount} records with other LocationID, StreamID, Observer or Device field'
+            logMsg = (f'WARNING there are {recCount} records with other field'
                       f' values in need of definition.\rThese other values must be defined in the associated lookup'
                       f'table before processing can continue.\r Exported records in need of definition see -'
                       f' {outPath}.\rExiting Script')
 
+            print(logMsg)
             logging.critical(logMsg, exc_info=True)
             sys.exit()
 
@@ -547,4 +640,105 @@ def process_SalmonidsSurvey(inDF, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
 
+def process_Measurements(inDF, etlInstance, dmInstance):
+    """
+        ETL routine to Append the Measurements form data with Measurement and or Pittag information to the
+        tblSmoltMeasurements table
 
+        :param inDF - Dataframe with the Subset of records to be appeneded, will be further
+        subet for the tblSmoltSurvey table.
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:inDFAppend - dataframe that was appended to the 'tblSmoltMeasurements' table.
+        """
+
+    try:
+
+        inDFAppend = inDF[['EventID', 'SpeciesCode', 'LifeStage', 'FishTally', 'ForkLength', 'LengthCategoryID',
+                           'TotalWeight', 'BagWeight', 'FishWeight', 'NewRecaptureCode', 'PITTag', 'MarkColor',
+                           'PriorSeason', 'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'Comments', 'QCFlag',
+                           'QCNotes', 'CreatedDate']]
+
+        # Round to two significant digits (ie. hundredths and then turncate the Weight fields
+        roundTruncateList = ['TotalWeight', 'BagWeight', 'FishWeight']
+        inDFAppend[roundTruncateList] = inDFAppend[roundTruncateList].applymap(truncate_to_2_decimal)
+
+        # Update any 'nan' string or np.nan values to None to consistently handle null values. Having to do a second
+        # time, not sure why the initial time didn't accomplish this converation to None.  Might not stick post defining
+        # of field types in the dm.generalDMClass.defineFieldTypesDF upstream workflow routine.
+
+        inDFAppend2 = inDFAppend.replace([np.nan, 'nan'], None)
+
+        insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
+                       f'LengthCategoryID, TotalWeight, BagWeight, FishWeight, NewRecaptureCode, PITTag, MarkColor, '
+                       f'PriorSeason, Injured, Dead, Scales, Tissue, EnvelopeID, Comments, QCFlag, QCNotes, CreatedDate)'
+                       f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        # Append the Contacts to the xref_EventContacts table
+        dm.generalDMClass.appendDataSet(cnxn, inDFAppend2, "tblSmoltMeasurements", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success ETL_Salmonids_Smolts.py - process_Measurements."
+        logging.info(logMsg)
+
+        return inDFAppend2
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - process_Measurements: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def process_Counts(inDF, etlInstance, dmInstance):
+    """
+        ETL routine to Append the Measurements form data without Measurement and or Pittag information to the
+        tblSmoltCount table
+
+        :param inDF - Dataframe with the Subset of records to be appeneded, will be further
+        subet for the tblSmoltSurvey table.
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:inDFAppend - dataframe that was appended to the 'tblSmoltCount' table.
+        """
+
+    try:
+
+        # Calculate the UnmeasuredLive and Unmeasured Dead fields
+        inDF['UnmeasuredLive'] = np.where(inDF['Dead'] == False, inDF['FishTally'], 0)
+        inDF['UnmeasuredDead'] = np.where(inDF['Dead'] == True, inDF['FishTally'], 0)
+
+        inDFAppend = inDF[['EventID', 'SpeciesCode', 'LifeStage', 'Comments', 'QCFlag', 'QCNotes',
+                           'CreatedDate', 'UnmeasuredLive', 'UnmeasuredDead']]
+
+        nullRecordQCFields = ['SpeciesCode', 'LifeStage', 'Comments', 'QCFlag', 'QCNotes']
+        # Delete records if null in fields
+        inDFFiltered = inDFAppend[~inDFAppend[nullRecordQCFields].isnull().all(axis=1)]
+
+        insertQuery = (f'INSERT INTO tblSmoltCounts (EventID, SpeciesCode, LifeStage, Comments, QCFlag, QCNotes,'
+                       f'CreatedDate, UnmeasuredLive, UnmeasuredDead) VALUES'
+                       f' (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        # Append the Contacts to the xref_EventContacts table
+        dm.generalDMClass.appendDataSet(cnxn, inDFFiltered, "tblSmoltCounts", insertQuery,
+                                        dmInstance)
+
+        logMsg = f"Success ETL_Salmonids_Smolts.py - process_Counts."
+        logging.info(logMsg)
+
+        return inDFFiltered
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_Salmonids_Smolts.py - process_Countss: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def truncate_to_2_decimal(x):
+    return np.floor(x * 100) / 100 if pd.notnull(x) else x
