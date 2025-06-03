@@ -4,7 +4,7 @@ As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.\
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.\
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal is developed - KRS.\
 As of 5/25/2025 - Elephant Seal ETL is developed - KRS.\
-As of 5/29/2025 - Salmonids Smolts ETL is in process - KRS. 
+As of 6/3/2025 - Salmonids Smolts ETL workflow developed - KRS\
 
 ## SFAN_AGOL_Portal_ETL.py
 Parent SFAN ArcGIS Online (AGOL) and Portal Extract, Transform and Load (ETL) script.  From parent script routines are
