@@ -684,6 +684,9 @@ def process_Measurements(inDF, etlInstance, dmInstance):
 
         inDFAppend2 = inDFAppend.replace([np.nan, 'nan'], None)
 
+        # Set where record have a LifeStage value of None to "NA" - added 6/4/2025
+        inDFAppend2['LifeStage'] = inDFAppend2['LifeStage'].fillna('NA')
+
         insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
                        f'LengthCategoryID, TotalWeight, BagWeight, FishWeight, NewRecaptureCode, PITTag, MarkColor, '
                        f'PriorSeason, Injured, Dead, Scales, Tissue, EnvelopeID, Comments, QCFlag, QCNotes, CreatedDate)'
@@ -730,8 +733,11 @@ def process_Counts(inDF, etlInstance, dmInstance):
                            'CreatedDate', 'UnmeasuredLive', 'UnmeasuredDead']]
 
         nullRecordQCFields = ['SpeciesCode', 'LifeStage', 'Comments', 'QCFlag', 'QCNotes']
-        # Delete records if null in fields
+        # Delete records if null in all fields
         inDFFiltered = inDFAppend[~inDFAppend[nullRecordQCFields].isnull().all(axis=1)]
+
+        # Set where record have a LifeStage value of None to "NA" - added 6/4/2025
+        inDFFiltered['LifeStage'] = inDFFiltered['LifeStage'].fillna('NA')
 
         insertQuery = (f'INSERT INTO tblSmoltCounts (EventID, SpeciesCode, LifeStage, Comments, QCFlag, QCNotes,'
                        f'CreatedDate, UnmeasuredLive, UnmeasuredDead) VALUES'
