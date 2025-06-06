@@ -11,6 +11,8 @@ Seals - tblEvents load.....many more unit tests needed.
 import unittest
 from unittest.mock import MagicMock, patch
 import pandas as pd
+
+import ETL_Salmonids_Smolts
 import generalDM as dm
 import ETL_PINN_Elephant as PElephant
 
@@ -100,6 +102,102 @@ class TestAppendDataSet(unittest.TestCase):
         # Add logic to confirm the test was successful
         print("Success 'test_record_count_PinnTblSealCount' passed.")
 
+    @patch('generalDM.logging.info')
+    def test_record_count_SalmonidsSmolt_Measurements(self, mock_log):
+        # Unit Test on Mock DataFrame and schema being processed successfully appends the correct number of records
+        # to the tbl_SmoltMeasurements Import.
+
+        data = {
+            "EventID": [1, 23],
+            "SpeciesCode": ["CO", "SH"],
+            "LifeStage": ["YOY", "YOY"],
+            "FishTally": [3, 6],
+            "ForkLength": [43, 34],
+            "LengthCategoryID": [6, 4],
+            "TotalWeight": [10.2, 4.5],
+            "BagWeight": [2.1, 2.1],
+            "FishWeight": [8.1, 3.3],
+            "NewRecaptureCode": ['NPIT', 'ND'],
+            "PITTag": [989005030193450, 989005030193451],
+            "MarkColor": ['blue', 'orange'],
+            "PriorSeason": [True, False],
+            "Injured": [False, False],
+            "Dead": [False, False],
+            "Scales": [False, False],
+            "Tissue": [True, False],
+            "EnvelopeID": ["013-2006", "0143-2006"],
+            "Comments": ["", "TestComments"],
+            "QCFlag": ["", "DEO"],
+            "QCNotes": ["", "Forgot to enter EvenlopeID Correctly"],
+            "CreatedDate": ["2025-01-01", "2025-02-01"]}
+
+        df = pd.DataFrame(data)
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+
+        # Patch the connect_DB_Access function
+        dm.generalDMClass.connect_DB_Access = MagicMock(return_value=mock_connection)
+
+        dmInstance = MagicMock()
+        etlInstance = MagicMock()
+        etlInstance.inDBBE = "mock_connection_string"  # Fix the root cause
+
+        ETL_Salmonids_Smolts.process_Measurements(df, etlInstance, dmInstance)
+
+        # Check logging.info calls for record count verification
+        log_messages = [call_args[0][0] for call_args in mock_log.call_args_list]
+
+        self.assertTrue(
+            any("Record Count Verification: Expected=2, Inserted=2" in msg for msg in log_messages),
+            "Expected record count verification log message not found in logging.info() calls."
+        )
+
+        # Add logic to confirm the test was successful
+        print("Success 'test_record_count_SalmonidsSmolt_Measurements' passed.")
+
+
+    @patch('generalDM.logging.info')
+    def test_record_count_SalmonidsSmolt_Counts(self, mock_log):
+        # Unit Test on Mock DataFrame and schema being processed successfully appends the correct number of records
+        # to the tbl_SmoltCounts Import.
+
+        data = {
+            "EventID": [1, 23],
+            "SpeciesCode": ["CO", "SH"],
+            "LifeStage": ["YOY", "YOY"],
+            "Comments": ["", "TestComments"],
+            "QCFlag": ["", "DEO"],
+            "QCNotes": ["", "Forgot to enter EvenlopeID Correctly"],
+            "CreatedDate": ["2025-01-01", "2025-02-01"],
+            "FishTally": [3, 6],
+            "Dead": [False, False]
+        }
+
+        df = pd.DataFrame(data)
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+
+        # Patch the connect_DB_Access function
+        dm.generalDMClass.connect_DB_Access = MagicMock(return_value=mock_connection)
+
+        dmInstance = MagicMock()
+        etlInstance = MagicMock()
+        etlInstance.inDBBE = "mock_connection_string"  # Fix the root cause
+
+        ETL_Salmonids_Smolts.process_Counts(df, etlInstance, dmInstance)
+
+        # Check logging.info calls for record count verification
+        log_messages = [call_args[0][0] for call_args in mock_log.call_args_list]
+
+        self.assertTrue(
+            any("Record Count Verification: Expected=2, Inserted=2" in msg for msg in log_messages),
+            "Expected record count verification log message not found in logging.info() calls."
+        )
+
+        # Add logic to confirm the test was successful
+        print("Success 'test_record_count_SalmonidsSmolt_Counts' passed.")
 
 class TestETLTargetSchema(unittest.TestCase):
     #Methds for testing expected data types are compatiable with target schema (i.e. field type match)
