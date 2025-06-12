@@ -297,22 +297,22 @@ class etl_SalmonidsSmolts:
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
+            
             fieldTypeDic = {'Field': ['SpeciesCode', 'LifeStage', 'Tally', 'ForkLength', 'LengthCategoryID',
-                                      'TotalWeight', 'BagWeight', 'FishWeight', 'NewRecaptureCode', 'PITTag',
+                                      'NewRecaptureCode', 'PITTag',
                                       'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead',
                                       'Scales', 'Tissue', 'EnvelopeID', 'Comments', 'QCFlag', 'OtherQCFlag',
                                       'QCNotes', 'ParentGlobalID', 'CreatedDate'],
 
-
-                            'Type': ['object', 'object', 'int64', 'int64', 'object', 'float32', 'float32', 'float32',
+                            'Type': ['object', 'object', 'int64', 'int64', 'object',
                                      'object', 'int64', 'object', 'object', 'object', 'object', 'object', 'object',
                                      'object', 'object', 'Object', 'object', 'object', 'Object', 'datetime64'],
 
                             'DateTimeFormat': ['na', 'na', 'na', 'na', 'na',
-                                               'na', 'na', 'na', 'na', 'na',
-                                               'na', 'na', 'na', 'na',
+                                               'na', 'na', 'na', 'na', 'na', 'na',
                                                'na', 'na', 'na', 'na', 'na', 'na',
                                                'na', 'na', '%m/%d/%Y %I:%M:%S %p']}
+
 
             outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -673,10 +673,12 @@ def process_Measurements(inDF, etlInstance, dmInstance):
                            'TotalWeight', 'BagWeight', 'FishWeight', 'NewRecaptureCode', 'PITTag', 'MarkColor',
                            'PriorSeason', 'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'Comments', 'QCFlag',
                            'QCNotes', 'CreatedDate']]
+        #### CONSIDER REMOVING CAUSING a .01 rounding error in the QA.
+        # # Round to two significant digits (ie. hundredths and then turncate the Weight fields
+        # roundTruncateList = ['TotalWeight', 'BagWeight', 'FishWeight']
+        # inDFAppend[roundTruncateList] = inDFAppend[roundTruncateList].applymap(truncate_to_2_decimal)
 
-        # Round to two significant digits (ie. hundredths and then turncate the Weight fields
-        roundTruncateList = ['TotalWeight', 'BagWeight', 'FishWeight']
-        inDFAppend[roundTruncateList] = inDFAppend[roundTruncateList].applymap(truncate_to_2_decimal)
+
 
         # Update any 'nan' string or np.nan values to None to consistently handle null values. Having to do a second
         # time, not sure why the initial time didn't accomplish this conversion to None.  Might not stick post defining
