@@ -687,6 +687,11 @@ def process_Measurements(inDF, etlInstance, dmInstance):
         # Set where record have a LifeStage value of None to "NA" - added 6/4/2025
         inDFAppend2['LifeStage'] = inDFAppend2['LifeStage'].fillna('NA')
 
+        # Set all FishTally records where None to 1 - Added 6/12/2025 post discussion with Mike/Brentley.
+        # All measurement records should be 1, for many years FishTally wasn't entered thus adding here for consistency
+        # across all records.
+        inDFAppend2.loc[inDFAppend2['FishTally'].isna(), 'FishTally'] = 1
+
         insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
                        f'LengthCategoryID, TotalWeight, BagWeight, FishWeight, NewRecaptureCode, PITTag, MarkColor, '
                        f'PriorSeason, Injured, Dead, Scales, Tissue, EnvelopeID, Comments, QCFlag, QCNotes, CreatedDate)'
