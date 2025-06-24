@@ -236,7 +236,7 @@ class etl_SalmonidsSmolts:
         """
         ETL routine for the Measurements form data in the Smolt Survey 123 form.
         Data is processed to table 'tblSmoltMeasurements - If measurement and or PITTag data', else going to the
-        tblSmoltCounts table.  TB further defined - 5/29/2025
+        tblSmoltUnmeasured table.
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param outDFEvent - Dataframe with the processed Event/Survey info
@@ -297,7 +297,7 @@ class etl_SalmonidsSmolts:
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            
+
             fieldTypeDic = {'Field': ['SpeciesCode', 'LifeStage', 'Tally', 'ForkLength', 'LengthCategoryID',
                                       'NewRecaptureCode', 'PITTag',
                                       'MarkColorMeasurements', 'PriorSeason', 'Injured', 'Dead',
@@ -339,7 +339,7 @@ class etl_SalmonidsSmolts:
 
             subsetDFMeasurements = outDFSubSet2wEventID[outDFSubSet2wEventID[measurementFields].notnull().any(axis=1)]
 
-            # Use the Inverse Logic to define the Records to go to tblSmoltCounts
+            # Use the Inverse Logic to define the Records to go to tblSmoltUnmeasured
             subsetDFCounts = outDFSubSet2wEventID[outDFSubSet2wEventID[measurementFields].isnull().all(axis=1)]
 
             # QC Check - Sum of 'subsetDFMeasurements' and 'subsetDFCounts' dataframe records equal the number of
@@ -720,14 +720,17 @@ def process_Measurements(inDF, etlInstance, dmInstance):
 def process_Counts(inDF, etlInstance, dmInstance):
     """
         ETL routine to Append the Measurements form data without Measurement and or Pittag information to the
-        tblSmoltCount table
+        tblSmountUnmeasured table.
 
-        :param inDF - Dataframe with the Subset of records to be appeneded, will be further
+        Updates:
+        20250624 - Updated to append to tblSmoltUnmeasured inplace of tblSmoltCounts table which is now legacy.
+
+        :param inDF - Dataframe with the Subset of records to be appended, will be further
         subet for the tblSmoltSurvey table.
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:inDFAppend - dataframe that was appended to the 'tblSmoltCount' table.
+        :return:inDFAppend - dataframe that was appended to the 'tblSmoltUnmeasured' table.
         """
 
     try:
@@ -746,13 +749,13 @@ def process_Counts(inDF, etlInstance, dmInstance):
         # Set where record have a LifeStage value of None to "NA" - added 6/4/2025
         inDFFiltered['LifeStage'] = inDFFiltered['LifeStage'].fillna('NA')
 
-        insertQuery = (f'INSERT INTO tblSmoltCounts (EventID, SpeciesCode, LifeStage, Comments, QCFlag, QCNotes,'
+        insertQuery = (f'INSERT INTO tblSmoltUnmeasured (EventID, SpeciesCode, LifeStage, Comments, QCFlag, QCNotes,'
                        f'CreatedDate, UnmeasuredLive, UnmeasuredDead) VALUES'
                        f' (?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         # Append the Contacts to the xref_EventContacts table
-        dm.generalDMClass.appendDataSet(cnxn, inDFFiltered, "tblSmoltCounts", insertQuery,
+        dm.generalDMClass.appendDataSet(cnxn, inDFFiltered, "tblSmoltUnmeasured", insertQuery,
                                         dmInstance)
 
         logMsg = f"Success ETL_Salmonids_Smolts.py - process_Counts."
