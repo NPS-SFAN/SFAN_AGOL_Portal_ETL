@@ -213,7 +213,7 @@ class etl_PINNElephant:
             outContactsDF = processElephantContacts(outDFSubset, etlInstance, dmInstance)
 
             # Lookup the EventID field via the GlobalID field
-            outContactsDF.insert(0, "EventID", None)
+            # outContactsDF.insert(0, "EventID", None)
 
             # Import Event Table to define the EventID via the GlobalID
             inQuery = (f"SELECT tblEvents.EventID, tblEvents.GlobalID FROM tblEvents WHERE ((Not (tblEvents.GlobalID)"
@@ -223,10 +223,15 @@ class etl_PINNElephant:
             outDFEventsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             # Lookup the EventID via the Global ID field
-            dfObsEvents_wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
-                                                                         "GlobalID", "EventID",
-                                                                         outContactsDF, "GlobalID",
-                                                                         "EventID")
+
+            dfObsEvents_wEventID = pd.merge(
+                outContactsDF,
+                outDFEventsLU[['EventID', 'GlobalID']],  # only keep these
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left'
+            )
+
 
             # Retain only the Fields of interest
             dfObsEvents_wEventID = dfObsEvents_wEventID[['EventID', 'ObserverID', 'CreatedDate']]
@@ -234,7 +239,7 @@ class etl_PINNElephant:
             insertQuery = (f'INSERT INTO tblEventObservers (EventID, ObserverID, CreatedDate) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            #Append the Contacts to the tblEventObserers table
+            # Append the Contacts to the tblEventObserers table
             dm.generalDMClass.appendDataSet(cnxn, dfObsEvents_wEventID, "tblEventObservers", insertQuery,
                                             dmInstance)
 
@@ -260,14 +265,15 @@ class etl_PINNElephant:
 
             outDFElephantEvents = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFElephantEvents)
 
-            # Lookup the EventID field via the GlobalID field
-            outDFElephantEvents.insert(0, "EventID", None)
 
             # Lookup the EventID via the Global ID field
-            dfElephantEvents_wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventsLU,
-                                                                          "GlobalID", "EventID",
-                                                                          outDFElephantEvents, "GlobalID",
-                                                                          "EventID")
+            dfElephantEvents_wEventID = pd.merge(
+                outDFElephantEvents,
+                outDFEventsLU[['EventID', 'GlobalID']],  # only keep these
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left'
+            )
 
             # Drop the GlobalID field not in the 'tblElephantsEvents' table
             dfElephantEvents_append = dfElephantEvents_wEventID.drop(columns='GlobalID')
@@ -276,7 +282,7 @@ class etl_PINNElephant:
             dfElephantEvents_append = dfElephantEvents_append.rename(columns={'CollectionDeviceID':'CollectionDeviceFull'})
 
             # Add the CollectionDeviceID field
-            dfElephantEvents_append.insert(0, "ID", None)
+            # dfElephantEvents_append.insert(0, "ID", None)
 
             # Read in the tluDevices lookup table
             # Import Event Table to define the EventID via the GlobalID
@@ -286,21 +292,21 @@ class etl_PINNElephant:
             outDFDevices = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             # Lookup the CollectionDeviceID via the Global ID field
-            dfElephantEvents_append = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFDevices,
-                                                                               "DeviceCode", "ID",
-                                                                               dfElephantEvents_append,
-                                                                             "CollectionDeviceFull",
-                                                                               "ID")
+            dfElephantEvents_append2 = pd.merge(
+                dfElephantEvents_append,
+                outDFDevices[['ID', 'DeviceCode']],  # only keep these
+                left_on='CollectionDeviceFull',
+                right_on='DeviceCode',
+                how='left')
 
             # Drop CollectionDeviceID field
-            dfElephantEvents_append = dfElephantEvents_append.drop(columns='CollectionDeviceFull')
+            dfElephantEvents_append2 = dfElephantEvents_append2.drop(columns='CollectionDeviceFull')
             # Rename ID to CollectionDeviceID
-            dfElephantEvents_append = dfElephantEvents_append.rename(
+            dfElephantEvents_append2 = dfElephantEvents_append2.rename(
                 columns={'ID': 'CollectionDeviceID'})
 
-
             # Set RegionalSurvey field to True if 'Yes' else False
-            dfElephantEvents_append['RegionalSurvey'] = dfElephantEvents_append['RegionalSurvey'] == 'Yes'
+            dfElephantEvents_append2['RegionalSurvey'] = dfElephantEvents_append2['RegionalSurvey'] == 'Yes'
 
             # Confirm the tluESealSeasons has been defined for the Realized Seasons
 
@@ -316,16 +322,17 @@ class etl_PINNElephant:
             outDFSeasons = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             # Lookup the Season
-            dfSeasonsDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFSeasons,
-                                                                             "Season", "Season",
-                                                                             uniqueSeasonsDF,
-                                                                             "Season",
-                                                                             "SeasonToDefine")
+            dfSeasonsDefined = pd.merge(
+                uniqueSeasonsDF,
+                outDFSeasons,
+                left_on='Season',
+                right_on='Season',
+                how='left')
 
             # Confirm the Season has been defined - if not exist
             # Check for Lookups not defined via an outer join.
             # If is null then these are undefined contacts
-            dfSeasonsDefined_Null = dfSeasonsDefined[dfSeasonsDefined['SeasonToDefine'].isna()]
+            dfSeasonsDefined_Null = dfSeasonsDefined[dfSeasonsDefined['Active'].isna()]
 
             numRec = dfSeasonsDefined_Null.shape[0]
             if numRec >= 1:
@@ -350,21 +357,21 @@ class etl_PINNElephant:
             logging.info(logMsg)
 
             # Remove/Clean Up Fields - EventID_lk, ID_lk, DeviceCode, DeviceName, Notes
-            dfElephantEvents_append = dfElephantEvents_append.drop(
-                columns=['EventID_lk', 'ID_lk', 'DeviceCode', 'DeviceName', 'Notes']
+            dfElephantEvents_append3 = dfElephantEvents_append2.drop(
+                columns=['DeviceCode']
             )
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
-            dfElephantEvents_append = dfElephantEvents_append.replace([np.nan, 'nan'], None)
+            dfElephantEvents_append3 = dfElephantEvents_append3.replace([np.nan, 'nan'], None)
 
             # Append the Elephant Event Records
-            insertQuery = (f'INSERT INTO tblElephantEvents (CollectionDeviceID, EventID, ParkCode, Season, Visibility, '
-                           f'SurveyType, RegionalSurvey, RegionalCountCode, Comments, CreatedDate) '
+            insertQuery = (f'INSERT INTO tblElephantEvents (ParkCode, Season, Visibility, SurveyType, RegionalSurvey, '
+                           f'RegionalCountCode, Comments, CreatedDate, EventID, CollectionDeviceID) '
                            f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the tblEventObserers table
-            dm.generalDMClass.appendDataSet(cnxn, dfElephantEvents_append, "tblElephantEvents", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, dfElephantEvents_append3, "tblElephantEvents", insertQuery,
                                             dmInstance)
 
             #################################
@@ -372,7 +379,7 @@ class etl_PINNElephant:
             # Table SubSiteNotDefined
             #################################
 
-            outSubSitesNotSurveyDF = tblSubSitesNotSurveyed(outDFSubset, outDFEventsLU, etlInstance, dmInstance)
+            tblSubSitesNotSurveyed(outDFSubset, outDFEventsLU, etlInstance, dmInstance)
 
             #####################################################
             # Return Survey with the Regional and EventID Defined
@@ -745,6 +752,15 @@ class etl_PINNElephant:
                          "Where Rehaul": "WhereRehaul",
                          "CreationDate": "CreatedDate"})
 
+            # Disturbance might be null if null exist
+            recNum = outDFSubset.shape[0]
+            if recNum == 0:
+                logMsg = (f'WARNING INFO No Disturbance Records - existing ETL_PINN_Elephant.py - process_Disturbance'
+                          f'without Appending (i.e. No Records to Append')
+                logging.info(logMsg, exc_info=True)
+                print(logMsg)
+                return "Success - No Append"
+
             ##############################
             # Numerous Field CleanUp and Standardization of field format
             ##############################
@@ -854,10 +870,17 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
 
         inDFContacts = inDF[['GlobalID', "Observers", "ObserversOther", "CreatedDate"]]
 
-        #####################################
+        # If single value will be integer - want as string so can work through parse logic
+        inDFContacts['Observers'] = inDFContacts['Observers'].astype(str)
+
+        ####################################
         # Parse the 'Observers' field on ','
+        ####################################
+
         # First remove the records where Observers == 389
         inObsNotOther = inDFContacts[inDFContacts['Observers'] != '389']
+
+        # Parse Observer Field
         inDFObserversParsed = inObsNotOther.assign(Observers=inObsNotOther['Observers'].str.split(',')).explode('Observers')
 
         # Trim white space in observers field
@@ -874,39 +897,44 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
         # Parse the 'Other' field on ','
         # Retain only the records where Observers contains 'other'
         inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('389')]
-        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Observers'].str.split(',')).explode('Observers')
 
-        # Trim white space in observers field
-        inDFOthersParsed['Observers'] = inDFOthersParsed['Observers'].str.lstrip()
+        if inObsOther.shape[0] >= 1:
 
-        # Remove Records that are not 389 - other
-        inDFOthersParsed2 = inDFOthersParsed[inDFOthersParsed['Observers'] == '389']
+            inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Observers'].str.split(',')).explode('Observers')
 
-        # Reset Index
-        inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+            # Trim white space in observers field
+            inDFOthersParsed['Observers'] = inDFOthersParsed['Observers'].str.lstrip()
 
-        ##################################
-        # Combine both parsed dataframes for fields Observers and Others
-        dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+            # Remove Records that are not 389 - other
+            inDFOthersParsed2 = inDFOthersParsed[inDFOthersParsed['Observers'] == '389']
+
+            # Reset Index
+            inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+
+            ##################################
+            # Combine both parsed dataframes for fields Observers and Others
+            dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+
+        else:  # Not any Other Observers
+            dfObserversOther = inDFObserversParsed3
 
         # Set Observers field to 'Integer'
         dfObserversOther['Observers'] = dfObserversOther['Observers'].astype(int)
 
-        # Define First and Last Name Fields
-        dfObserversOther.insert(2, "Last_Name", None)
-        dfObserversOther.insert(3, "First_Name", None)
-        dfObserversOther.insert(4, "ObserverID", None)
         #######################################
         # Read in 'Lookup Table - tlu Contacts'
         inQuery = f"SELECT tluObservers.ObserverID, [FirstName] & '_' & [LastName] AS First_Last FROM tluObservers;"
 
         outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Apply the Lookup Code on the Two Data Frames to get the Obse
-        dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
-                                                             "ObserverID", "ObserverID",
-                                                             dfObserversOther, "Observers",
-                                                             "ObserverID")
+        # Join Obersvers with tluObservers lookup table
+        dfObserversOtherwLK = pd.merge(
+            dfObserversOther,
+            outDFContactsLU,
+            left_on='Observers',  # column in dfObserversOther
+            right_on='ObserverID',  # column in outDFContactsLU
+            how='left'  # or 'inner', 'right', 'outer' depending on needs
+        )
 
         # Check for Lookups not defined via an outer join.
         # If is null then these are undefined contacts
@@ -964,14 +992,14 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         # Subset to only need fields
         subSiteDF = inDF[['GlobalID', 'SubSitesNotSurveyed']]
 
-        # Add EventID field
-        subSiteDF.insert(0, "EventID", None)
-
         # Lookup the EventID value via RegionalID
-        subSiteDFwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, inDFEvents,
-                                                                           "GlobalID", "EventID",
-                                                                           subSiteDF, "GlobalID",
-                                                                           "EventID")
+        subSiteDFwEventID = pd.merge(
+            subSiteDF,
+            inDFEvents[['EventID', 'GlobalID']],
+            left_on='GlobalID',
+            right_on='GlobalID',
+            how='left')
+
         ###################################
         # Explode the 'SubSitesNotSurveyed'
         subSiteDFwEventIDParsed = (subSiteDFwEventID.assign(SubSitesNotSurveyed=subSiteDFwEventID['SubSitesNotSurveyed'].str.split(',')).
@@ -983,14 +1011,7 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         ##################################
         # Lookup the LocationID via the SubSitesNotSurveyed
 
-        # Add LocationID field
-        subSiteDFwEventIDParsed.insert(0, "LocationID", None)
-
-        # Set LocationID field to Int64
-        subSiteDFwEventIDParsed['LocationID'] = subSiteDFwEventIDParsed['LocationID'].astype('Int64')
-
-        # Read in the tluDevices lookup table
-        # Import Event Table to define the EventID via the GlobalID
+        # Read in the Locations lookup table
         inQuery = (f"SELECT tblLocations.LocationID, tblLocations.SubSiteCode, tblLocations.ESealLocation FROM "
                    f"tblLocations WHERE tblLocations.ESealLocation=True;")
 
@@ -998,15 +1019,20 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         outDFLocations = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
         # Lookup the LocationID value via SubSiteCode
-        subSiteDFwEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLocations,
-                                                                   "SubSiteCode", "LocationID",
-                                                                   subSiteDFwEventIDParsed, "SubSitesNotSurveyed",
-                                                                   "LocationID")
+        subSiteDFwEventID = pd.merge(
+            subSiteDFwEventIDParsed,
+            outDFLocations[['LocationID', 'SubSiteCode']],
+            left_on='SubSitesNotSurveyed',
+            right_on='SubSiteCode',
+            how='left')
+
+        # Retain the Sub Sites Not Surveyed where LocationID is not Null
+        subSiteDFwEventIDNotNull = subSiteDFwEventID.dropna(subset=['LocationID'])
 
         ###################################
         # Append the Sub Sites Not Surveyed Records
 
-        subSiteDFAppend = subSiteDFwEventID[['EventID', 'LocationID']]
+        subSiteDFAppend = subSiteDFwEventIDNotNull[['EventID', 'LocationID']]
 
         insertQuery = f'INSERT INTO tblSubSitesNotSurveyed (EventID, LocationID) VALUES (?, ?)'
 
