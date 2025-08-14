@@ -678,8 +678,6 @@ def process_Measurements(inDF, etlInstance, dmInstance):
         # roundTruncateList = ['TotalWeight', 'BagWeight', 'FishWeight']
         # inDFAppend[roundTruncateList] = inDFAppend[roundTruncateList].applymap(truncate_to_2_decimal)
 
-
-
         # Update any 'nan' string or np.nan values to None to consistently handle null values. Having to do a second
         # time, not sure why the initial time didn't accomplish this conversion to None.  Might not stick post defining
         # of field types in the dm.generalDMClass.defineFieldTypesDF upstream workflow routine.
