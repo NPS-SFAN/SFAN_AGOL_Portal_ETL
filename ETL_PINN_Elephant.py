@@ -99,7 +99,7 @@ class etl_PINNElephant:
         """
 
         try:
-            #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
             inDF = None
             for key, df in outDFDic.items():
                 if 'ElephantSeal' in key:
@@ -111,7 +111,7 @@ class etl_PINNElephant:
                                 "Start Time Survey", "End Time Survey", "Define Observer(s)", "Specify other.",
                                 "Visibility", "Survey Type", "Sub Sites Not Surveyed", "Regional Survey",
                                 "Regional Survey Code", "Event Comment", "Collection Device", "CreationDate",
-                                "Creator"]].rename(
+                                "Creator", "Resight Data"]].rename(
                 columns={'Project_Type': 'ProjectCode',
                          'Park Code': 'ParkCode',
                          'Project Type': 'ProjectCode',
@@ -128,11 +128,15 @@ class etl_PINNElephant:
                          'Collection Device': 'CollectionDeviceID',
                          'Specify other..1': 'DefineOthersCollection',
                          'CreationDate': 'CreatedDate',
-                         'Creator': 'CreatedBy'})
+                         'Creator': 'CreatedBy',
+                         'Resight Data':'ResightData'})
 
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
+
+            # Update 'E_SEAL' to 'E_Seal' for consistency
+            outDFSubset['ProjectCode'] = outDFSubset['ProjectCode'].str.replace(r'^E_SEAL$', 'E_Seal', regex=True)
 
             # Convert to date only
             outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.normalize()
@@ -174,7 +178,7 @@ class etl_PINNElephant:
 
             outDFEvent = outDFSubset[['GlobalID', "ProjectCode", "StartDate", "EndDate", "StartTime", "EndTime",
                                       "CreatedDate", "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
-                                      "DataProcessingLevelUser", "Project", "ProtocolID"]]
+                                      "DataProcessingLevelUser", "Project", "ProtocolID", "ResightData"]]
 
             # Define desired field types
 
@@ -182,19 +186,23 @@ class etl_PINNElephant:
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
             fieldTypeDic = {'Field': ["GlobalID", "ProjectCode", "StartDate", "EndDate", "StartTime", "EndTime",
                                       "CreatedDate", "CreatedBy", "DataProcessingLevelID", "DataProcessingLevelDate",
-                                      "DataProcessingLevelUser", "Project", "ProtocolID"],
+                                      "DataProcessingLevelUser", "Project", "ProtocolID", "ResightData"],
                              'Type': ["object", "object", "datetime64", "datetime64", "datetime64", "datetime64",
-                                      "datetime64", "object", "object", "datetime64", "object", "object", "object"],
+                                      "datetime64", "object", "object", "datetime64", "object", "object", "object",
+                                      "object"],
                             'DateTimeFormat': ["na", "na", "%m/%d/%Y", "%m/%d/%Y", "%H:%M", "%H:%M",
-                                               "%m/%d/%Y %I:%M:%S %p", "na", "na", "%m/%d/%Y %H:%M:%S", "na", "na", "na"
-                                               ]}
+                                               "%m/%d/%Y %I:%M:%S %p", "na", "na", "%m/%d/%Y %H:%M:%S", "na", "na",
+                                               "na", "na"]}
 
             outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFEvent)
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             outDFSurvey = outDFSurvey.replace([np.nan, 'nan'], None)
 
-            # Append outDFSurvey to 'tbl_Events'
+            # Drop field ResightData
+            outDFSurveyAppend = outDFSurvey.drop(columns=['ResightData'])
+
+            # Append outDFSurvey to 'tbl_Events' All Events (E_Seal and Resight)
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblEvents (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
                            f'CreatedDate, CreatedBy, DataProcessingLevelID, DataProcessingLevelDate, '
@@ -202,7 +210,41 @@ class etl_PINNElephant:
                            f'?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSurveyAppend, "tblEvents", insertQuery, dmInstance)
+
+            print("Successfully imported initial Events to tblEvents")
+
+            ######################
+            # Create second Event where both 'ESeal' and 'Resight' data collection.  This will be 'ResightData' = 'Yes'
+            # and Project Type != 'Seal Resight'  On the append above the initial ESeal is created but not the Resight
+            # Event.  These will be Seal_Resight events
+            #####################
+
+            outDFSurveyResight2nd = outDFSurvey[(outDFSurvey['ProjectCode'] != 'Seal_Resight') &
+                                                (outDFSurvey['ResightData'] == 'Yes')]
+
+            # Drop field ResightData
+            outDFSurveyResight2ndAppend = outDFSurveyResight2nd.drop(columns=['ResightData'])
+
+            # Set ProjectCode = 'Seal_Resight'
+            outDFSurveyResight2ndAppend['ProjectCode'] = "Seal_Resight"
+
+            # Append outDFSurvey to 'tbl_Events' All Events (E_Seal and Resight)
+            # Pass final Query to be appended
+            insertQuery = (f'INSERT INTO tblEvents (GlobalID, ProjectCode, StartDate, EndDate, StartTime, EndTime, '
+                           f'CreatedDate, CreatedBy, DataProcessingLevelID, DataProcessingLevelDate, '
+                           f'DataProcessingLevelUser, Project, ProtocolID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+                           f'?)')
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSurveyResight2ndAppend, "tblEvents", insertQuery,
+                                            dmInstance)
+
+            print("Successfully imported 2nd set of events for concurrent 'E_Seal' and 'Resight_Events', these are "
+                  "Seal_Resight events.")
+
+            # Aggregrate all events that were appended
+
 
             ##################
             # Define Observers -  table tblEventObservers
@@ -216,14 +258,15 @@ class etl_PINNElephant:
             # outContactsDF.insert(0, "EventID", None)
 
             # Import Event Table to define the EventID via the GlobalID
-            inQuery = (f"SELECT tblEvents.EventID, tblEvents.GlobalID FROM tblEvents WHERE ((Not (tblEvents.GlobalID)"
+            inQuery = (f"SELECT tblEvents.EventID, tblEvents.GlobalID, tblEvents.ProjectCode FROM tblEvents WHERE"
+                       f" ((Not (tblEvents.GlobalID)"
                        f" Is Null));")
+
 
             # Import Events
             outDFEventsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             # Lookup the EventID via the Global ID field
-
             dfObsEvents_wEventID = pd.merge(
                 outContactsDF,
                 outDFEventsLU[['EventID', 'GlobalID']],  # only keep these
@@ -232,24 +275,29 @@ class etl_PINNElephant:
                 how='left'
             )
 
-
             # Retain only the Fields of interest
             dfObsEvents_wEventID = dfObsEvents_wEventID[['EventID', 'ObserverID', 'CreatedDate']]
 
-            insertQuery = (f'INSERT INTO tblEventObservers (EventID, ObserverID, CreatedDate) VALUES (?, ?, ?)')
+            insertQuery = f'INSERT INTO tblEventObservers (EventID, ObserverID, CreatedDate) VALUES (?, ?, ?)'
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the tblEventObserers table
             dm.generalDMClass.appendDataSet(cnxn, dfObsEvents_wEventID, "tblEventObservers", insertQuery,
                                             dmInstance)
 
+            print("Successfully imported Observer records to tblEventObservers'")
+            logMsg = f"Success ETL_PINN_ELephant.py - processElephantContacts."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
             ##################
-            # Process ElephantEvents table
+            # Process ElephantEvents table - Don't create events if Only Resight, only applicable if Count data
+            # collected (i.e. E_Seal only).
             ##################
 
             outDFElephantEvents = outDFSubset[["GlobalID", "ParkCode", "Season", "Visibility", "SurveyType",
                                                   "RegionalSurvey", "RegionalCountCode", "Comments",
-                                                  "CollectionDeviceID", "CreatedDate"]]
+                                                  "CollectionDeviceID", "CreatedDate", "ResightData", "ProjectCode"]]
 
             # Define desired field types
 
@@ -257,26 +305,31 @@ class etl_PINNElephant:
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
             fieldTypeDic = {'Field': ["GlobalID", "ParkCode", "Season", "Visibility", "SurveyType",
                                                   "RegionalSurvey", "RegionalCountCode", "Comments",
-                                                  "CollectionDeviceID", "CreatedDate"],
+                                                  "CollectionDeviceID", "CreatedDate", "ProjectCode"],
                              'Type': ["object", "object", "object", "int64", "object", "object",
-                                      "object", "object", "object", "datetime64"],
+                                      "object", "object", "object", "datetime64", "object"],
                             'DateTimeFormat': ["na", "na", "na", "na", "na", "na",
-                                               "na", "na", "na", "%m/%d/%Y %I:%M:%S %p"]}
+                                               "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na"]}
 
             outDFElephantEvents = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFElephantEvents)
 
+            # Drop the Resight_Only records - no Elephant Seal Record created - i.e. Project Type = 'Seal_Resight'
+            outDFElephantEvents2nd = outDFElephantEvents[outDFElephantEvents['ProjectCode'] != 'Seal_Resight']
 
-            # Lookup the EventID via the Global ID field
+            # Drop field ResightData
+            outDFElephantEvents2nd = outDFElephantEvents2nd.drop(columns=['ResightData'])
+
+            # Lookup the EventID via the Global ID  and ProjectCode = SurveyTypefield
             dfElephantEvents_wEventID = pd.merge(
-                outDFElephantEvents,
-                outDFEventsLU[['EventID', 'GlobalID']],  # only keep these
-                left_on='GlobalID',
-                right_on='GlobalID',
+                outDFElephantEvents2nd,
+                outDFEventsLU[['EventID', 'GlobalID', 'ProjectCode']],  # only keep these
+                left_on=['GlobalID', 'ProjectCode'],
+                right_on=['GlobalID', 'ProjectCode'],
                 how='left'
             )
 
             # Drop the GlobalID field not in the 'tblElephantsEvents' table
-            dfElephantEvents_append = dfElephantEvents_wEventID.drop(columns='GlobalID')
+            dfElephantEvents_append = dfElephantEvents_wEventID.drop(columns=['GlobalID', 'ProjectCode'])
 
             # Lookup the CollectionDeviceID field
             dfElephantEvents_append = dfElephantEvents_append.rename(columns={'CollectionDeviceID':'CollectionDeviceFull'})
@@ -352,10 +405,6 @@ class etl_PINNElephant:
                 logging.warning(logMsg)
                 exit()
 
-            logMsg = f"Success ETL_PINN_ELephant.py - processElephantContacts."
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-            logging.info(logMsg)
-
             # Remove/Clean Up Fields - EventID_lk, ID_lk, DeviceCode, DeviceName, Notes
             dfElephantEvents_append3 = dfElephantEvents_append2.drop(
                 columns=['DeviceCode']
@@ -374,6 +423,8 @@ class etl_PINNElephant:
             dm.generalDMClass.appendDataSet(cnxn, dfElephantEvents_append3, "tblElephantEvents", insertQuery,
                                             dmInstance)
 
+            print("Successfully created ESeal/Count Events to tblElephantEvents'")
+
             #################################
             # Define Table SubSiteNotDefined
             # Table SubSiteNotDefined
@@ -386,19 +437,17 @@ class etl_PINNElephant:
             # Use existing outDFEvent dataframe and the already imported outDFEventsLU
 
             # Define the EventID and Visibility fields via join on the ParentGlobalID - GlobalID join
-            outDFEventwGlIDwEventID = pd.merge(outDFSurvey, outDFEventsLU,
-                                               how='left', left_on="GlobalID",
-                                               right_on="GlobalID", suffixes=("_src", "_lk"))
-
-            # Subset to only the Event Field to be retained for down stream processing
-            outDFEventwGlIDwEventID2 = outDFEventwGlIDwEventID[['EventID', 'GlobalID', 'StartTime']]
+            outDFEventwGlIDwEventID = pd.merge(outDFSurvey[["GlobalID", "StartDate", "StartTime"]],
+                                               outDFEventsLU[["GlobalID", "ProjectCode", "EventID"]],
+                                               how='outer', left_on="GlobalID",
+                                               right_on="GlobalID")
 
             logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe with the Survey and Event information pushed
-            return outDFEventwGlIDwEventID2
+            return outDFEventwGlIDwEventID
 
         except Exception as e:
 
@@ -857,7 +906,8 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
     """
     Define Observers in Pinnipeds table tblEventObservers
     Harvest Multi-select field 'Define Observers', if other, also harvest 'Specify Other' field in Survey .csv
-    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts
+    Lookup table for contacts is tlu_Contacts - Contact_ID being pushed to table xref_EventContacts. Need Observers for
+    both E_Seal, and Resight_Events.
 
     :param inDF: Data Frame being processed
     :param etlInstance: ETL processing instance
@@ -995,9 +1045,9 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         # Lookup the EventID value via RegionalID
         subSiteDFwEventID = pd.merge(
             subSiteDF,
-            inDFEvents[['EventID', 'GlobalID']],
-            left_on='GlobalID',
-            right_on='GlobalID',
+            inDFEvents[['EventID', 'GlobalID', 'ProjectCode']],
+            left_on=['GlobalID'],
+            right_on=['GlobalID'],
             how='left')
 
         ###################################
@@ -1043,6 +1093,7 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
 
         logMsg = f"Success ETL_PINN_ELephant.py - tblSubSitesNotSurveyed."
         logging.info(logMsg)
+        print(logMsg)
 
         return subSiteDFAppend
 
