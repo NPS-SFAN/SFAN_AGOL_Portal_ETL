@@ -61,7 +61,7 @@ class etl_PINNElephant:
             outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
 
             ######
-            # Process Resights Form
+            # Process Resights Form - Create Resight Events and Resight Records
             ######
             outDFResights = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
 
@@ -243,9 +243,6 @@ class etl_PINNElephant:
             print("Successfully imported 2nd set of events for concurrent 'E_Seal' and 'Resight_Events', these are "
                   "Seal_Resight events.")
 
-            # Aggregrate all events that were appended
-
-
             ##################
             # Define Observers -  table tblEventObservers
             # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
@@ -261,7 +258,6 @@ class etl_PINNElephant:
             inQuery = (f"SELECT tblEvents.EventID, tblEvents.GlobalID, tblEvents.ProjectCode FROM tblEvents WHERE"
                        f" ((Not (tblEvents.GlobalID)"
                        f" Is Null));")
-
 
             # Import Events
             outDFEventsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
@@ -442,12 +438,23 @@ class etl_PINNElephant:
                                                how='outer', left_on="GlobalID",
                                                right_on="GlobalID")
 
+            # Last Join to get the Visibility Field - Needed for Elephant and Resight Event Table - Added 8/18/2025
+            outDFEventwGlIDwEventIDwVis = pd.merge(outDFEventwGlIDwEventID[["GlobalID", "StartDate", "StartTime",
+                                                                            "EventID", "ProjectCode"]],
+                                               inDF[["GlobalID", "Visibility", "Season", "Park Code", "Event Comment"]],
+                                               left_on="GlobalID",
+                                               right_on="GlobalID",
+                                               how='inner')
+
+            outDFEventwGlIDwEventIDFinal = outDFEventwGlIDwEventIDwVis.rename(columns={'Park Code': 'ParkCode',
+                                                                                       'Event Comment': 'Comments'})
+
             logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - process_Survey"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe with the Survey and Event information pushed
-            return outDFEventwGlIDwEventID
+            return outDFEventwGlIDwEventIDFinal
 
         except Exception as e:
 
@@ -515,8 +522,11 @@ class etl_PINNElephant:
 
             outDFCounts = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
+            # Subset to only 'E_Seal' events - Resight_Events are not applicable
+            outDFEvents_ESeal = outDFEvents[outDFEvents['ProjectCode'] == 'E_Seal']
+
             # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
-            outDFCountswEventID = pd.merge(outDFCounts, outDFEvents, how='left', left_on="ParentGlobalID",
+            outDFCountswEventID = pd.merge(outDFCounts, outDFEvents_ESeal, how='left', left_on="ParentGlobalID",
                                            right_on="GlobalID", suffixes=("_src", "_lk"))
 
             #
@@ -549,7 +559,9 @@ class etl_PINNElephant:
             # Subset to the Counts Fields and Stack Records - Going to the tblSealCount table
             #
             outDFCountsStack1 = outDFCountswEventID.drop(['RedFurPhoca', 'SharkBitePhoca', 'ParentGlobalID',
-                                                            'GlobalID', 'Other', 'DefineOther', 'SpecifyOther'], axis=1)
+                                                            'GlobalID', 'Other', 'DefineOther', 'SpecifyOther',
+                                                          'StartDate', 'ProjectCode', 'Visibility', 'Season',
+                                                          'ParkCode', 'Comments'], axis=1)
 
             # Define fields identifying stack records
             id_vars = ['CreatedDate', 'EventID', 'ObservationTime', 'LocationID']
@@ -650,6 +662,12 @@ class etl_PINNElephant:
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, combinedAllCountsDF, "tblSealCount", insertQuery, dmInstance)
 
+            logMsg = f"Successfully imported Count Data to tblSealCount"
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+            print(logMsg)
+
+
             ######################################################################
             # Process RedFur and Shark Bite Records this goes to tblPhocaSealCount
             ######################################################################
@@ -658,7 +676,7 @@ class etl_PINNElephant:
 
             logMsg = f'Success process_Counts ETL Routines'
             logging.info(logMsg, exc_info=True)
-
+            print(logMsg)
             return combinedAllCountsDF
 
         except Exception as e:
@@ -731,15 +749,18 @@ class etl_PINNElephant:
 
             outDFResights = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
+            # Subset to only 'Seal_Resight' events
+            outDFEvents_Resight = outDFEvents[outDFEvents['ProjectCode'] == 'Seal_Resight']
+
             # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
-            outDFResightswEventID = pd.merge(outDFResights, outDFEvents[['GlobalID', 'EventID']], how='left',
+            outDFResightswEventID = pd.merge(outDFResights, outDFEvents_Resight[['GlobalID', 'EventID']], how='left',
                                              left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
 
             ############
             # Create the Resight  EVent Table Records - this will be an import of the 'outDFEvents'
             ############
 
-            outDFResightEvents = processResightEvents(outDFEvents, etlInstance, dmInstance)
+            outDFResightEvents = processResightEvents(outDFEvents_Resight, etlInstance, dmInstance)
 
             ############
             # Create the Resight Records
@@ -832,8 +853,13 @@ class etl_PINNElephant:
             outDFDist = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic,
                                                                  inDF=outDFSubset)
 
+
+            # Disturbance events will be for 'E_Seal' events only.
+            # Subset to only 'Seal_Resight' events
+            outDFEvents_ESEAL = outDFEvents[outDFEvents['ProjectCode'] == 'E_Seal']
+
             # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
-            outDFDistwEventID = pd.merge(outDFDist, outDFEvents[['GlobalID', 'EventID']], how='left',
+            outDFDistwEventID = pd.merge(outDFDist, outDFEvents_ESEAL[['GlobalID', 'EventID']], how='left',
                                              left_on="ParentGlobalID", right_on="GlobalID",
                                              suffixes=("_src", "_lk"))
 
@@ -892,7 +918,7 @@ def processRedFurShark(inDF, etlInstance, dmInstance):
 
         logMsg = f'Success processRedFurShark ETL Routine'
         logging.info(logMsg, exc_info=True)
-
+        print(logMsg)
         return dfRedFurSharkNA
 
     except Exception as e:
@@ -1030,6 +1056,9 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
     SubSiteCode in the tblLocations Table and append records to the tblSubSitesNotSurveyed table
     Undefined/Not Present subsites (i.e. 9999) are going to unknown subsite definition.
 
+    NOTE - The field 'Sub Site Not Survey' in the Main Event Form (i.e. SFAN_ElephantSeal_2025v1_3_0.csv) is not being
+    used. The field 'Sub Sites Not Surveyed' is the correct field to harvest.
+
     :param inDF: Data Frame being processed with Sub Sites Not Surveys, and Regional ID field
     :param inDFEvents: Data Frame with the EventID and GlabalID attributes used to define the EventID
     :param etlInstance: ETL processing instance
@@ -1119,17 +1148,15 @@ def processResightEvents(inDF, etlInstance, dmInstance):
 
     try:
 
-        # Read in the Elephant Events Table to get the Visibility and Season value for the event
-        inQuery = (f"SELECT tblElephantEvents.EventID, tblElephantEvents.Visibility, tblElephantEvents.Season, "
-                   f"tblElephantEvents.ParkCode, tblElephantEvents.Comments, tblElephantEvents.CreatedDate"
-                   f" FROM tblElephantEvents;")
+        # Read in the Event Table to get the CreatedDate, and Comments Fields
+        inQuery = (f"SELECT tblEvents.EventID, tblEvents.CreatedDate"
+                   f" FROM tblEvents;")
 
         # Import Events
-        outDFElephantEvents = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+        outDFEvents_misc = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Merge on the Event Data Frame to get the Visibility and Season from the ElephantEvents table
-        inDFwVisSeason = pd.merge(inDF, outDFElephantEvents[['EventID', 'Visibility', 'Season', 'ParkCode',
-                                                             'CreatedDate', 'Comments']]
+        # Merge on the Event Data Frame to get the CreatedDate
+        inDFwVisSeason = pd.merge(inDF, outDFEvents_misc[['EventID', 'CreatedDate']]
                                   , how='left', left_on="EventID", right_on="EventID", suffixes=("_src", "_lk"))
 
         # Subset to field to append
