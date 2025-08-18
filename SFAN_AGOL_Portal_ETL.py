@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20250814 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20250814 - Testing.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedFE_20250806.accdb'
 
 # Year Being Processed
@@ -89,7 +89,7 @@ def main():
         # Set option in pandas to not allow chaining (views) of dataframes, instead force copy to be performed.
         pd.options.mode.copy_on_write = True
 
-        #Close any open Access Databases on the computer
+        # Close any open Access Databases on the computer
         dm.generalDMClass.closeAccessDB()
 
         # Logfile will be saved in the workspace directory which is child of the fileDir - this is in addition to the
