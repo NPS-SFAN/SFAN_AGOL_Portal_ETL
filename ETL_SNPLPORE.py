@@ -205,7 +205,7 @@ class etl_SNPLPORE:
             insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID, Contact_Role) VALUES (?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            #Append the Contacts to the xref_EventContacts table
+            # Append the Contacts to the xref_EventContacts table
             dm.generalDMClass.appendDataSet(cnxn, outContactsDFAppend, "xref_Event_Contacts", insertQuery,
                                             dmInstance)
 
@@ -331,7 +331,6 @@ class etl_SNPLPORE:
             # CleanUp Wrangle Steps Observations Table
             ##############################
 
-
             # Convert Nans in Object/String and defined Numeric fields to None, NaN will not import to text
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
@@ -340,7 +339,6 @@ class etl_SNPLPORE:
                               "Specify other.", "Number_Eggs"]
             for col in cols_to_update:
                 outDFSubset[col] = dm.generalDMClass.nan_to_none(outDFSubset[col])
-
 
             ############################
             # Define desired field types
@@ -854,6 +852,10 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
         # Perform an outer left join - these are the records to be append
         outDFNestIDNew = pd.merge(outDFNestIDFirst, outDFNestMaster, on='Nest_ID', how='left', indicator=True)
+
+        # Only Rectain the records that aren't present via '_merge' = 'left_only'.  Necessary is multiple etl happen
+        # per year thus some nests are already present.
+        outDFNestIDNew = outDFNestIDNew[outDFNestIDNew['_merge'] =='left_only']
 
         outDFNestIDNewAppend = outDFNestIDNew[['Location_ID_x', 'Nest_ID', "Start_Date"]].rename(
                     columns={'Location_ID_x': 'Location_ID'})
