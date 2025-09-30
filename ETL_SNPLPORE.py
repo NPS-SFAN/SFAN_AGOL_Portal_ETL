@@ -73,7 +73,7 @@ class etl_SNPLPORE:
 
             ######################
             # Process Nest Repeats - Updates will be pushed to the tbl_Nest_Master and photos exported.
-            # NEEDS to be developed.
+            # NEEDS to be developed.  Will Update existing information and import the attached photos.
             ######################
 
             #outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset)
