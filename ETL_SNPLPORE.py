@@ -428,7 +428,7 @@ class etl_SNPLPORE:
         """
 
         try:
-            #Merge Survey and Obs
+            # Merge Survey and Obs
             outDFSurObs = pd.merge(outDFSurvey, outDFObs, on='Event_ID', how='inner')
 
 
@@ -520,16 +520,15 @@ class etl_SNPLPORE:
                     inDF = df
                     break
 
-            # Create initial dataframe subset with all the relevant Fields for Bands and Chick Bands
-            outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Specify other.', 'Right Leg',
-                                'Specify other..1', 'SNPL Sex', 'SNPL Age', 'Band Notes', 'Chick Banding?', 'Chick % Dryness',
-                                'Egg Tooth Presence', 'Yolk Sac Presence', 'USGS Band Number', 'SNPL Chick Notes']].rename(
+            outDFSubset = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Right Leg',
+                                'SNPL Sex', 'SNPL Age', 'Band Notes', 'Chick Banding?',
+                                'Chick % Dryness',
+                                'Egg Tooth Presence', 'Yolk Sac Presence', 'USGS Band Number',
+                                'SNPL Chick Notes']].rename(
                 columns={'ParentGlobalID': 'SNPL_Data_ID',
                          'GlobalID': 'SNPL_Band_ID',
                          'Left Leg': 'Left_Leg',
-                         'Specify other.': 'Specify_Other_Left',
                          'Right Leg': 'Right_Leg',
-                         'Specify other..1': 'Specify_Other_Right',
                          'SNPL Sex': 'SNPL_Sex',
                          'SNPL Age': 'SNPL_Age',
                          'Band Notes': 'Band_Notes',
@@ -541,14 +540,12 @@ class etl_SNPLPORE:
                          })
 
             # Create the 'tbl_SNPL_Banded' subset
-            outDFBands = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Specify other.', 'Right Leg',
-                                'Specify other..1', 'SNPL Sex', 'SNPL Age', 'Band Notes']].rename(
+            outDFBands = inDF[['ParentGlobalID', 'GlobalID', 'Left Leg', 'Right Leg',
+                                'SNPL Sex', 'SNPL Age', 'Band Notes']].rename(
                 columns={'ParentGlobalID': 'SNPL_Data_ID',
                          'GlobalID': 'SNPL_Band_ID',
                          'Left Leg': 'Left_Leg',
-                         'Specify other.': 'Specify_Other_Left',
                          'Right Leg': 'Right_Leg',
-                         'Specify other..1': 'Specify_Other_Right',
                          'SNPL Sex': 'SNPL_Sex',
                          'SNPL Age': 'SNPL_Age',
                          'Band Notes': 'Band_Notes'})
@@ -557,7 +554,7 @@ class etl_SNPLPORE:
             # fields in access.  Numeric fields when 'None' is added will turn to 'Object' fields but will import to the
             # numeric (e.g. Int or Double) fields still when an Object type with numeric only values and the added
             # none values. A real PITA None and Numeric is.
-            cols_to_update = ["Left_Leg", "Specify_Other_Left", "Right_Leg", "Specify_Other_Right", "SNPL_Sex",
+            cols_to_update = ["Left_Leg", "Right_Leg", "SNPL_Sex",
                               "SNPL_Age", "Band_Notes"]
             for col in cols_to_update:
                 outDFBands[col] = dm.generalDMClass.nan_to_none(outDFBands[col])
@@ -565,42 +562,8 @@ class etl_SNPLPORE:
             # Not necessary to redefine field types already all Object.
 
             # Additional Data Clean Up Exercises
-
-            ###################################
-            # Add the 'Specify Other Left where not null records to the 'Left_Leg' field.  Replace the 'other' value in
-            # leg field.  The 'Specify other. Right' field was only used in field season 2024 version 1 of survey 123
-            # forms. The 'Left_Leg' field in the 2024 feature class is a drop down box so retaining this logic to
-            # replace the 'Other' with the band value in 'Specify_Other_Left' field.  In subsequent cleaned up
-            # feature layers with the 'Specify other' field removed in the 'SNPLBands' feature layer this section
-            # can be removed. - KRS 20240828
-            #####################################
-            # Define the Mask - only work where "Left_Leg' is not na.
-            mask = outDFBands['Specify_Other_Left'].notna()
-
-            # Replace 'other' in 'Left_Leg' with the value from 'Specify_Other_Left' where applicable
-            outDFBands.loc[mask, 'Left_Leg'] = outDFBands.loc[mask].apply(
-                lambda row: row['Left_Leg'].replace('other', row['Specify_Other_Left']) if 'other' in row[
-                    'Left_Leg'] else row['Left_Leg'], axis=1)
-
-            ###################################
-            # Add the 'Specify Other Right where not null records to the 'Right_Leg' field.  Replace the 'other' value in
-            # leg field.
-            # Other in the right leg was only used in field season 2024 version 1 of survey 123 forms
-            # DM has manually pushed all 'Specify Other Right' values to the 'Right Leg' field.
-            # Turning off this coding section - KRS 20240828
-            #####################################
-            # # Define the Mask - only work where "Right_Leg' is not na.
-            # mask2 = outDFBands['Specify_Other_Right'].notna()
-            #
-            # # Replace 'other' in 'Right_Leg' with the value from 'Specify_Other_Right' where applicable
-            #
-            # outDFBands.loc[mask2, 'Right_Leg'] = outDFBands.loc[mask2].apply(
-            #     lambda row: row['Right_Leg'].replace('other', row['Specify_Other_Right']) if 'other' in row[
-            #         'Right_Leg'] else row['Right_Leg'], axis=1)
-
             # Drop fields not being appended
-            outDFBandsAppend = outDFBands.drop(columns=['Specify_Other_Left', 'Specify_Other_Right', 'SNPL_Band_ID'])
-
+            outDFBandsAppend = outDFBands.drop(columns=['SNPL_Band_ID'])
 
             # Pass query to be appended
             insertQuery = (f'INSERT INTO tbl_SNPL_Banded (SNPL_Data_ID, Left_Leg, Right_Leg, SNPL_Sex,'
@@ -623,7 +586,6 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-
             return outDFBands, outDFChickBands
 
         except Exception as e:
@@ -632,6 +594,7 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
     def process_ChickBands(outDFSubset, etlInstance, dmInstance, outDFObs):
 
         """
