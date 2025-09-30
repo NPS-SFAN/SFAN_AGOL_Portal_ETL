@@ -127,9 +127,6 @@ class etl_SNPLPORE:
             # Format to m/d/yyy
             outDFSubset['Start_Date'] = outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
 
-            # Insert 'Location_ID' field
-            outDFSubset.insert(1, "Location_ID", None)
-
             # Insert 'Protocol_Name' field
             outDFSubset.insert(2, "Protocol_Name", "PORE SNPL")
 
@@ -154,13 +151,12 @@ class etl_SNPLPORE:
 
             outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
             # Perform the lookup to field 'Location_ID'
-            outDF_Step2 = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFLookup,
-                                                                 "Loc_Name", "Location_ID",
-                                                                 outDFSubset, "Survey Location",
-                                                                 "Location_ID")
+
+            outDF_Step2 = pd.merge(outDFSubset, outDFLookup[['Loc_Name', 'Location_ID']], how='left',
+                                             left_on="Survey Location", right_on="Loc_Name", suffixes=("_src", "_lk"))
 
             # Drop field "Survey Location
-            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location'])
+            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location', 'Loc_Name'])
 
 
             ############################
@@ -184,13 +180,17 @@ class etl_SNPLPORE:
 
             # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tbl_Events (Event_ID, Location_ID, Protocol_Name, Start_Date, Start_Time, '
-                           f'End_Time, Created_Date, Created_By, DataProcessingLevelID, DataProcessingLevelDate, '
-                           f'DataProcessingLevelUser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+            # Grab all column names from the dataframe
+            cols = outDFSurvey.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tbl_Events ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery,
-                                                        dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery, dmInstance)
 
             ##################
             # Define Observers -  table xref_EventContacts
@@ -199,7 +199,7 @@ class etl_SNPLPORE:
             ##################
 
             outContactsDF = processSNPLContacts(inDF, etlInstance, dmInstance)
-            #Retain only the Fields of interest
+            # Retain only the Fields of interest
             outContactsDFAppend = outContactsDF[['Event_ID', 'Contact_ID', 'Contact_Role']]
 
             insertQuery = (f'INSERT INTO xref_Event_Contacts (Event_ID, Contact_ID, Contact_Role) VALUES (?, ?, ?)')
@@ -929,23 +929,29 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
 
-
         ##################################
         # Parse the 'Other' field on ','
         # Retain only the records where Observers contains 'other'
         inObsOther = inDFContacts[inDFContacts['Observers'].str.contains('other')]
-        inDFOthersParsed = inObsOther.assign(Observers=inObsOther['Other'].str.split(',')).explode('Observers')
-        inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
 
-        # Reset Index
-        inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+        # If there are no others then you can skip
+        if inObsOther.shape[0] > 0:
 
-        # Trim leading white spaces in the 'Observers' field
-        inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+            inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
 
-        ##################################
-        # Combine both parsed dataframes for fields Observers and Others
-        dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+            # Reset Index
+            inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
+
+            # Trim leading white spaces in the 'Observers' field
+            inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+
+            ##################################
+            # Combine both parsed dataframes for fields Observers and Others
+            dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+
+        else:
+            # No Other assign as
+            dfObserversOther = inDFObserversParsed3
 
         # Define First and Last Name Fields
         dfObserversOther.insert(2, "Last_Name", None)
@@ -974,10 +980,6 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
         # Create a 'First_Last' name which will be the index on which the lookup will be performs
         dfObserversOther['First_Last'] = dfObserversOther['First_Name'] + '_' + dfObserversOther['Last_Name']
 
-        # Add the Contact_ID field to be populated
-        fieldLen = dfObserversOther.shape[1]
-        # Insert 'DataProcesingLevelID' = 1
-        dfObserversOther.insert(fieldLen-1, "Contact_ID", None)
 
         #######################################
         # Read in 'Lookup Table - tlu Contacts'
@@ -985,13 +987,11 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
 
         outDFContactsLU = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Apply the Lookup Code on the Two Data Frames
-        dfObserversOtherwLK = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFContactsLU,
-                                                             "First_Last", "Contact_ID",
-                                                             dfObserversOther, "First_Last",
-                                                             "Contact_ID")
+        # Define the Contact_ID via join on First_Last fields
+        dfObserversOtherwLK = pd.merge(dfObserversOther, outDFContactsLU[['First_Last', 'Contact_ID']], how='left',
+                               left_on="First_Last", right_on="First_Last", suffixes=("_src", "_lk"))
 
-        # Inssert the 'Contact_Role' field with the default 'Observer' value
+        # Insert the 'Contact_Role' field with the default 'Observer' value
         dfObserversOtherwLK.insert(2, 'Contact_Role', 'Observer')
 
         # Check for Lookups not defined via an outer join.
