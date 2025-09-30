@@ -71,6 +71,14 @@ class etl_SNPLPORE:
             ######
             outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
+            ######################
+            # Process Nest Repeats - Updates will be pushed to the tbl_Nest_Master and photos exported.
+            # NEEDS to be developed.
+            ######################
+
+            #outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset)
+
+
             logMsg = f"Success ETL_SNPLPORE.py - process_ETLSNPLPORE."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
@@ -243,9 +251,6 @@ class etl_SNPLPORE:
             cols_to_update = ["Event_Notes", "LE_Violation", "Violation_Notes", "DeviceName", "PredatorStop"]
             for col in cols_to_update:
                 outDFEventDetails2[col] = dm.generalDMClass.nan_to_none(outDFEventDetails2[col])
-
-            ## Predator Stop Time set Pandas NaN values to 0 so plays nice with Access - Not Using - 8/15/2024
-            ##outDFEventDetails2['PredatorStop']=outDFEventDetails2['PredatorStop'].fillna(0)
 
             # Change Check Box Field If Yes to True and No to False
             outDFEventDetails2['LE_Violation'] = outDFEventDetails2['LE_Violation'].apply(
@@ -783,6 +788,38 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
+    def process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset):
+        """
+        Process the Nest Repeats table to update Nest information in tbl_Nest_Master.  Workflow also processes
+        photo attachments in the nest repeats
+
+        THIS METHOD NEEDS TO BE DEVELOPED as of 9/30/2025.
+
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param outDFSurvey: Survey data frame that was append to the database
+        :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+
+        :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
+        """
+
+        try:
+
+            logMsg = f"Success process_NestRepeats - updated Nest Information in tbl_Nest_Master."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return outDFNestIDNewAppend
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_NestRepeats: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+
+
 def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset):
     """
     Create the the Nest_ID record in the 'tbl_Nest_Master' table for all observations if it doesn't already exist.
@@ -853,11 +890,10 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
     except Exception as e:
 
-        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_NestMasterInitial: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-
 
 def processSNPLContacts(inDF, etlInstance, dmInstance):
     """
@@ -902,7 +938,10 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
         # If there are no others then you can skip
         if inObsOther.shape[0] > 0:
 
-            inDFOthersParsed2 = inDFOthersParsed.drop(['Other'], axis=1)
+            inDFOthersParsed2 = inObsOther.drop(['Observers'], axis=1)
+
+            # Rename Other to Observers
+            inDFOthersParsed2.rename(columns={'Other': 'Observers'}, inplace=True)
 
             # Reset Index
             inDFOthersParsed3 = inDFOthersParsed2.reset_index(drop=True)
