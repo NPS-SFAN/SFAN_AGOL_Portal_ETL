@@ -76,7 +76,7 @@ class etl_SNPLPORE:
             # NEEDS to be developed.  Will Update existing information and import the attached photos.
             ######################
 
-            #outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset)
+            outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
 
             logMsg = f"Success ETL_SNPLPORE.py - process_ETLSNPLPORE."
@@ -804,6 +804,25 @@ class etl_SNPLPORE:
         """
 
         try:
+
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'NestsRepeat' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset - STOPPED HERE 9/30/2025
+            outDFSubset = inDF[['ParentGlobalID', 'New Nest ID', 'x', 'y']].rename(
+                columns={'ParentGlobalID': 'Event_ID',
+                         'New Nest ID': 'Nest_ID',
+                         'x': 'X_Coord',
+                         'y': 'Y_Coord'})
+
+
+
+
+
 
             logMsg = f"Success process_NestRepeats - updated Nest Information in tbl_Nest_Master."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
