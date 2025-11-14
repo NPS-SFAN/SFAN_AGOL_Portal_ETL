@@ -106,7 +106,6 @@ class etl_PINNElephant:
                     inDF = df
                     break
 
-
             outDFSubset = inDF[['GlobalID', 'Survey Name', "Project Type", "Park Code", "Season", "Survey Date",
                                 "Start Time Survey", "End Time Survey", "Define Observer(s)", "Specify other.",
                                 "Visibility", "Survey Type", "Sub Sites Not Surveyed", "Regional Survey",
