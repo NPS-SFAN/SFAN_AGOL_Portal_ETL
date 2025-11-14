@@ -45,12 +45,12 @@ class etl_SalmonidsElectro:
             # ETL Event/Survey/Observers
             ######
             outDFEventSurvey = etl_SalmonidsElectro.process_Event_Electrofishing(outDFDic, etlInstance, dmInstance)
-            outDFEvent= outDFEventSurvey[0]
+            outDFEvent = outDFEventSurvey[0]
 
             ######
             # ETL Passes
             ######
-            outDFPassWQ = etl_SalmonidsElectro.process_Pass_Electrofishing(outDFDic, outDFEvent, etlInstance,
+            outDFPass = etl_SalmonidsElectro.process_Pass_Electrofishing(outDFDic, outDFEvent, etlInstance,
                                                                            dmInstance)
             ######
             # ETL Process Measurements
@@ -228,20 +228,23 @@ class etl_SalmonidsElectro:
 
             outDFEventIDGlobalID = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-            # Define the EventID via a join Global ID via lookup approach
-            outDFSubset2wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventIDGlobalID,
-                                                                         "GlobalID", "EventID",
-                                                                         outDFSubset2, "GlobalID",
-                                                                         "EventID")
+            # # Define the EventID via a join Global ID via lookup approach
+            # outDFSubset2wEventID = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventIDGlobalID,
+            #                                                              "GlobalID", "EventID",
+            #                                                               outDFSubset2, "GlobalID",
+            #                                                              "EventID")
 
-            # Insert 'EventID' field - will populated via join on the 'GlobalID' field post join of records to tblEvents
-            outDFEvent.insert(1, "EventID", np.nan)
+            # Define the EventID in the Event table via a join Global ID
+            outDFSubset2wEventID = pd.merge(outDFSubset2, outDFEventIDGlobalID[['GlobalID', 'EventID']], how='left',
+                                             left_on="GlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
 
-            # Define the EventID via a join Global ID via lookup approach
-            outDFEvent2 = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFEventIDGlobalID,
-                                                                         "GlobalID", "EventID",
-                                                                         outDFEvent, "GlobalID",
-                                                                         "EventID")
+            # Drop the EventID_scr field and rename EventID_lk to EventID
+            outDFSubset2wEventID.drop(columns=['EventID_src'], inplace=True)
+            outDFSubset2wEventID.rename(columns={'EventID_lk': 'EventID'}, inplace=True)
+
+            # Define the EventID via a join Global ID
+            outDFEvent2 = pd.merge(outDFEvent, outDFSubset2wEventID[['GlobalID', 'EventID']], how='left',
+                                   left_on="GlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
 
             ####################################
             # Append outDFESurvey to 'tblEfishSurveys'
@@ -259,8 +262,6 @@ class etl_SalmonidsElectro:
             for field in fieldList:
                 outDFSubset2wEventID[field] = outDFSubset2wEventID[field].apply(lambda x: f"{x:.2f}")
 
-
-
             # Calibration pool is a Yes/No Boleen field, setting to 'True'/ 'False' (i.e. Boolean)
             outDFSubset2wEventID['CalibrationPool'] = outDFSubset2wEventID['CalibrationPool'].apply(
                 lambda x: True if x == 'Yes' else False)
@@ -271,8 +272,14 @@ class etl_SalmonidsElectro:
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
                                                 'NumberOfPasses']]
 
-
-
+            # Set nan values real or string to None - added 11/14/2025
+            outDFSurvey = outDFSurvey.replace({
+                np.nan: None,
+                "nan": None,
+                "NaN": None,
+                "NONE": None,
+                "None": None,
+            })
 
             # Pass final Query to be appended to tblEFishSurveys - Must have brackets around fields with spaces.
             insertQuery = (f'INSERT INTO tblEfishSurveys (EventID, LocationID, IndexReach, IndexUnit, BasinWideUnit, '
@@ -280,15 +287,13 @@ class etl_SalmonidsElectro:
                            f'Conductivity, [Specific Conductance], NumberOfPasses) '
                            f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
-
-
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEfishSurveys", insertQuery,
                                             dmInstance)
 
             ##################
             # Define tblEventObservers
-            # Harvest Mutli-select field Define Observers, if other, also harvest 'Specify Other.
+            # Harvest Multi-select field Define Observers, if other, also harvest 'Specify Other.
             # Lookup table for contacts is tluObserver
             ##################
 
@@ -302,10 +307,10 @@ class etl_SalmonidsElectro:
             dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
             outContactsDF.insert(2, 'CreatedDate', dateNow)
 
-            insertQuery = (f'INSERT INTO tblEventObservers (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)')
+            insertQuery = f'INSERT INTO tblEventObservers (EventID, OBSCODE, CreatedDate) VALUES (?, ?, ?)'
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            #Append the Contacts to the xref_EventContacts table
+            # Append the Contacts to the xref_EventContacts table
             dm.generalDMClass.appendDataSet(cnxn, outContactsDF, "tblEventObservers", insertQuery,
                                             dmInstance)
 
@@ -428,10 +433,10 @@ class etl_SalmonidsElectro:
                     inDF = df
                     break
 
-            # Create initial dataframe subset
+            # Create initial dataframe subset - Dropped field 'RandomSample' - 11/14/2025 not collecting in Survey 123
             outDFSubset = inDF[['Pass', 'SpeciesCode', 'LifeStage', 'Tally', 'NumberOfFish',
                                 'ForkLength_mm', 'LengthCategoryID', 'TotalWeight_g', 'BagWeight_g', 'FishWeight_g',
-                                'RandomSample', 'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'PriorSeason',
+                                'Injured', 'Dead', 'Scales', 'Tissue', 'EnvelopeID', 'PriorSeason',
                                 'PITTag', 'Comments', 'QCFlag', 'QCNotes', 'ParentGlobalID', 'CreationDate']]
 
             # Rename fields
@@ -441,8 +446,8 @@ class etl_SalmonidsElectro:
                                         'FishWeight_g': 'FishWeight',
                                         'CreationDate': 'CreatedDate'}, inplace=True)
 
-            ## Subset to only the 'Tally' = 'No' fields, that is records with measurements
-            ## outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
+            # Subset to only the 'Tally' = 'No' fields, that is records with measurements
+            # outDFSubset = outDFSubset[outDFSubset['Tally'] == 'No']
 
             # Fields Tissue and Scales and Text fields but are treated like Boolean.  If Null value set to 'No'
             outDFSubset['Tissue'] = outDFSubset['Tissue'].fillna('No')
@@ -469,7 +474,6 @@ class etl_SalmonidsElectro:
                 lambda x: True if x == 'Yes' else False)
             outDFSubset['PriorSeason'] = outDFSubset['PriorSeason'].apply(
                 lambda x: True if x == 'Yes' else False)
-
 
             # Join on GlobalID to get the EventID
             outDFMeasurements = pd.merge(outDFSubset, outDFEvent[['GlobalID', 'EventID']], left_on='ParentGlobalID',
@@ -499,10 +503,10 @@ class etl_SalmonidsElectro:
 
             # Define insert/append query
             insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
-                           f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, RandomSample, Injured, '
+                           f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, Injured, '
                            f'Dead, Scales, Tissue, EnvelopeID, PriorSeason, PITTag, Comments, QCFlag, QCNotes, '
-                           f'CreatedDate, EventID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
-                           f'?, ?, ?)')
+                           f'CreatedDate, EventID, RandomSample) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+                           f'?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
@@ -868,18 +872,13 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
 
-        # Define OBSCODE
-        inDFObserversParsed3.insert(2, 'OBSCODE', None)
-
         # Import the tluObservers tables
         inQuery = f"SELECT * FROM tluObservers"
         outDFtluObservers = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Define the OBSCODE via a join lookup approach
-        inDFObserversDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFtluObservers,
-                                                             "OBSCODE", "OBSCODE",
-                                                             inDFObserversParsed3, "Observers",
-                                                             "OBSCODE")
+        # Define OBSCODE via join with Contacts Looks - migrated from applyLookuToDFField function on 11/14/2025
+        inDFObserversDefined = pd.merge(inDFObserversParsed3, outDFtluObservers[['OBSCODE']], how='left',
+                                        left_on="Observers", right_on="OBSCODE", suffixes=("_src", "_lk"))
 
         ##################################
         # Parse the 'Other' field on ','
