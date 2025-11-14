@@ -416,18 +416,13 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         # Trim leading white spaces in the 'Observers' field
         inDFObserversParsed3['Observers'] = inDFObserversParsed3['Observers'].str.lstrip()
 
-        # Define OBSCODE which is already defined in the Obserer Field
-        inDFObserversParsed3['OBSCODE']= inDFObserversParsed3['Observers']
-
         # Import the tluObservers tables
         inQuery = f"SELECT * FROM tluObservers"
         outDFtluObservers = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-        # Define the OBSCODE via a join lookup approach
-        inDFObserversDefined = dm.generalDMClass.applyLookupToDFField(dmInstance, outDFtluObservers,
-                                                                      "OBSCODE", "OBSCODE",
-                                                                      inDFObserversParsed3, "Observers",
-                                                                      "OBSCODE")
+        # Define OBSCODE via join with Contacts Looks - migrated from applyLookuToDFField function on 11/14/2025
+        inDFObserversDefined = pd.merge(inDFObserversParsed3, outDFtluObservers[['OBSCODE']], how='left',
+                                        left_on="Observers", right_on="OBSCODE", suffixes=("_src", "_lk"))
 
         inDFObserversDefined = inDFObserversDefined[['GlobalID', 'EventID', 'Observers', 'OBSCODE']]
 
