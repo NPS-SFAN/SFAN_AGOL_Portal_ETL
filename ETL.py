@@ -12,6 +12,7 @@ import ETL_Salmonids_Electro as SEfish
 import ETL_Salmonids_Smolts as SSmolt
 import ETL_PCM_LocationsManualParking as PCMLOC
 import ETL_PINN_Elephant as PElephant
+import ETL_QCValidation as etlQC
 
 class etlInstance:
     # Class Variables
