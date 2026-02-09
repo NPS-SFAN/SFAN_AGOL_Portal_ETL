@@ -12,6 +12,7 @@ import glob, os, sys
 import traceback
 import generalDM as dm
 import logging
+import ETL_QCValidation as etlQC
 
 class etl_SalmonidsSmolts:
     def __init__(self):
@@ -312,7 +313,6 @@ class etl_SalmonidsSmolts:
                                                'na', 'na', 'na', 'na', 'na', 'na',
                                                'na', 'na', 'na', 'na', 'na', 'na',
                                                'na', 'na', '%m/%d/%Y %I:%M:%S %p']}
-
 
             outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -683,6 +683,15 @@ def process_Measurements(inDF, etlInstance, dmInstance):
         # across all records.
         inDFAppend2.loc[inDFAppend2['FishTally'].isna(), 'FishTally'] = 1
 
+        # QC Validation - LengthCategory and Fish Weight.  Within Survey 123 AGOL website external to the form
+        # if an upstream field is changed it is easy to forget to update downstream fields that are auto-calculated
+        # in the data entry form.  Added - 2/9/2026
+
+        qcValidationFields = ['LengthCategoryID', 'FishWeight']
+
+        inDFAppend_postQCVal = etlQC.etlInstance_QC.process_ETLValidation(etlInstance, dmInstance, inDF,
+                                                                          qcValidationFields)
+
         insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
                        f'LengthCategoryID, TotalWeight, BagWeight, FishWeight, NewRecaptureCode, PITTag, MarkColor, '
                        f'PriorSeason, Injured, Dead, Scales, Tissue, EnvelopeID, Comments, QCFlag, QCNotes, CreatedDate)'
@@ -690,7 +699,7 @@ def process_Measurements(inDF, etlInstance, dmInstance):
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         # Append the Contacts to the xref_EventContacts table
-        dm.generalDMClass.appendDataSet(cnxn, inDFAppend2, "tblSmoltMeasurements", insertQuery,
+        dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal, "tblSmoltMeasurements", insertQuery,
                                         dmInstance)
 
         logMsg = f"Success ETL_Salmonids_Smolts.py - process_Measurements."
