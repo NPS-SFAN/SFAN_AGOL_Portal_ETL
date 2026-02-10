@@ -689,7 +689,7 @@ def process_Measurements(inDF, etlInstance, dmInstance):
 
         qcValidationFields = ['LengthCategoryID', 'FishWeight']
 
-        inDFAppend_postQCVal = etlQC.etlInstance_QC.process_ETLValidation(etlInstance, dmInstance, inDF,
+        inDFAppend_postQCVal = etlQC.etlInstance_QC.process_ETLValidation(etlInstance, dmInstance, inDFAppend2,
                                                                           qcValidationFields)
 
         insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
