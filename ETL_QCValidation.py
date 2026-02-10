@@ -13,6 +13,7 @@ import ETL_Salmonids_Smolts as SSmolt
 import ETL_PCM_LocationsManualParking as PCMLOC
 import ETL_PINN_Elephant as PElephant
 from datetime import datetime
+import numpy as np
 
 class etlInstance_QC:
     # Class Variables
@@ -58,7 +59,6 @@ class etlInstance_QC:
                     outDF_new, changed = etlInstance_QC.qc_FishWeight(
                         etlInstance, dmInstance, outDF, field
                     )
-
                 else:
                     logMsg = (
                         f"WARNING QC validation failed for "
@@ -88,12 +88,16 @@ class etlInstance_QC:
         QC Validation for LengthCategoryID fields in the Summer Measurements and Smolt Measurement tables.
         Lookup table 'tluLengthCategories' review via lookup to confirm the correct LengthCatID value is entered.
 
+        Flagging with 'CFCETL' flag -Calculated field value was corrected during extract transform and load
+        quality control validation check.
+
         :param etlInstance: ETL workflow instance
         :param dmInstance: data management instance which will have the logfile name\
         :param inDF: List with QC Validation Fields to be processed
         :param field: Field in 'inDF' being validated
 
-        :return:
+        :return:outDFwLookUp - dataframe with the updates 'LengthCategoryID' field
+         changed - variable defining if the inDF passed in the outDFwLookup has been changed - True/False
         """
 
         try:
@@ -109,23 +113,31 @@ class etlInstance_QC:
             # Via the 'ForkLength' variable lookup the 'LengthCategoryID' value
             outDFwLookUp = etlInstance_QC.lookup_length_category_id(tluLengthCategories_DF, inDF)
 
-            # Variables to push
-            flag = "CFCETL"
-            note = "Updated - LengthCategoryID during initial ETL QC Validation"
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Define an Index where the Length Category ID lookups are not equal
+            left = outDFwLookUp["LengthCategoryID"]
+            right = outDFwLookUp["LengthCategoryID_Lookup"]
 
-            # rows needing correction
-            mask_update = (
-                    outDFwLookUp["LengthCategoryID"] != outDFwLookUp["LengthCategoryID_Lookup"]
-            )
+            both_missing = left.isna() & right.isna()
+            equal_values = left.fillna("__NULL__").eq(right.fillna("__NULL__"))
+            mask_update = ~(both_missing | equal_values)
+            outDFwLookUp = outDFwLookUp.replace([np.nan, 'nan'], None)
 
+            # Get Count of Records to be updated
             countUpdate = mask_update.sum()
 
             if countUpdate >= 1:
 
+                # Define changed denoting the Input and Output data frame has been updated
+                changed = True
+
+                # Variables to push
+                flag = "CFCETL"
+                now = datetime.now().strftime("%Y-%m-%d")
+                note = f"Updated - LengthCategoryID during initial ETL QC Validation - {now}"
+
                 # update the corrected value
-                outDFwLookUp.loc[mask_update, "LengthcategoryID"] = inDF.loc[
-                    mask_update, "LengthCategoryID_LU"
+                outDFwLookUp.loc[mask_update, "LengthCategoryID"] = outDFwLookUp.loc[
+                    mask_update, "LengthCategoryID_Lookup"
                 ]
 
                 # ---- QCField ----
@@ -141,10 +153,10 @@ class etlInstance_QC:
                 # ---- QCNotes ----
                 outDFwLookUp.loc[mask_update, "QCNotes"] = (
                     outDFwLookUp.loc[mask_update, "QCNotes"]
-                    .fillna(f"{note} - {now}")
+                    .fillna(f"{note}")
                     .where(
                         outDFwLookUp.loc[mask_update, "QCNotes"].isna(),
-                        outDFwLookUp.loc[mask_update, "QCNotes"] + " | " + f"{note} - {now}"
+                        outDFwLookUp.loc[mask_update, "QCNotes"] + " | " + f"{note}"
                     )
                 )
 
@@ -153,6 +165,9 @@ class etlInstance_QC:
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.critical(logMsg)
 
+                # Drop the 'LengthCategoryID_Lookup'
+                outDFwLookUp = outDFwLookUp.drop(columns=['LengthCategoryID_Lookup'])
+
             else:
                 logMsg = (f'No Updates - for Length Category ID records in '
                           f'- {etlInstance.protocol} - QC validation - qc_LengthCategoryID')
@@ -160,7 +175,7 @@ class etlInstance_QC:
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.info(logMsg)
 
-            return outDFwLookUp
+            return outDFwLookUp, changed
 
         except Exception as e:
 
@@ -208,6 +223,7 @@ class etlInstance_QC:
         InDF["LengthCategoryID_Lookup"] = InDF["LengthCategoryID_Lookup"].where(
             InDF["LengthCategoryID_Lookup"].notna(), None)
 
+        # Convert all nan to None
         InDF = InDF.replace([np.nan, 'nan'], None)
 
         return InDF
@@ -215,7 +231,10 @@ class etlInstance_QC:
     def qc_FishWeight(etlInstance, dmInstance, inDF, field):
 
         """
-        QC Validation for Fish Weight field. Fish Weight is Total Weight - Bag Weight
+        QC Validation for Fish Weight field. Fish Weight is Total Weight - Bag Weight.
+        Updating if the QC Validation Calulated Fish Weight if >=0.001.
+        Flagging with 'CFCETL' flag -Calculated field value was corrected during extract transform and load
+        quality control validation check.
 
         :param etlInstance: ETL workflow instance
         :param dmInstance: data management instance which will have the logfile name\
@@ -223,31 +242,33 @@ class etlInstance_QC:
         :param field: Field in 'inDF' being validated
 
         :return:
+        inDF - dataframe with the updates 'LengthCategoryID' field
+        changed - variable defining if the inDF passed in the outDFwLookup has been changed - True/False
+
         """
 
         try:
 
             # Variables to push if QC validation fails
-            flag = "CFCETL"
-            note = "Updated - Fish Weight during initial ETL QC Validation"
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            inDF['FishWeight_QC'] = inDF["TotalWeight"] - inDF["BagWeight"]
+            inDF['FishWeight_Dif'] = inDF["FishWeight"] - inDF["FishWeight_QC"]
 
-            # rows needing correction
-            mask_update = (
-                    inDF["FishWeight"].notna() &
-                    inDF["TotalWeight"].notna() &
-                    inDF["BagWeight"].notna() &
-                    (inDF[field] != (inDF["TotalWeight"] - inDF["BagWeight"]))
-            )
+            # If the Absolute Difference is >=0.001 then update
+            mask_update = inDF["FishWeight_Dif"].abs() >= 0.001
 
             countUpdate = mask_update.sum()
 
             if countUpdate >= 1:
+                # Define Dataframe has been updated
+                changed = True
 
-                # Calculate FishWeight = TotalWeight - BagWeight for the rows in mask_update
-                inDF.loc[mask_update, field] = (
-                        inDF.loc[mask_update, "TotalWeight"] - inDF.loc[mask_update, "BagWeight"]
-                )
+                flag = "CFCETL"
+                now = datetime.now().strftime("%Y-%m-%d")
+                note = f"Updated - Fish Weight during initial ETL QC Validation - {now}"
+
+                # Update Fish Weight
+                inDF.loc[mask_update, field] = inDF.loc[
+                    mask_update, "FishWeight_QC"]
 
                 # ---- QCField ----
                 inDF.loc[mask_update, "QCFlag"] = (
@@ -262,10 +283,10 @@ class etlInstance_QC:
                 # ---- QCNotes ----
                 inDF.loc[mask_update, "QCNotes"] = (
                     inDF.loc[mask_update, "QCNotes"]
-                    .fillna(f"{note} - {now}")
+                    .fillna(f"{note}")
                     .where(
                         inDF.loc[mask_update, "QCNotes"].isna(),
-                        inDF.loc[mask_update, "QCNotes"] + " | " + f"{note} - {now}"
+                        inDF.loc[mask_update, "QCNotes"] + " | " + f"{note}"
                     )
                 )
 
@@ -274,6 +295,9 @@ class etlInstance_QC:
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.critical(logMsg)
 
+                # Drop the 'FishWeight_QC' and 'FishWeight_Dif' fields
+                inDF = inDF.drop(columns=['FishWeight_QC', 'FishWeight_Dif'])
+
             else:
                 logMsg = (f'No Updates - for {field} records in '
                           f'- {etlInstance.protocol} - QC validation - qc_FishWeight')
@@ -281,7 +305,7 @@ class etlInstance_QC:
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.info(logMsg)
 
-            return inDF
+            return inDF, changed
 
         except Exception as e:
 
@@ -289,10 +313,5 @@ class etlInstance_QC:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
-
-
-
-
-
 
 
