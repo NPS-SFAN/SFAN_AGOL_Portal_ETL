@@ -15,6 +15,7 @@ import ETL_PINN_Elephant as PElephant
 from datetime import datetime
 import numpy as np
 
+
 class etlInstance_QC:
     # Class Variables
     numETLInstances = 0
@@ -29,10 +30,18 @@ class etlInstance_QC:
 
         # Define Instance Variables
         numETLInstances += 1
+
     def process_ETLValidation(etlInstance, dmInstance, inDF, qcValidationFields):
 
         """
         Setup Method to process QC Validation routines for the pass fields by dataset/monitoring component.
+
+        Current defined for Fish Length Category and Figh Weight.
+
+        To Do For Summer Habitat post migration of ETL to Python - (TO DO ITEMS below):
+        Residual Pool Depth - RPD = Max Depth - Crest Depth >0.001
+        Estimated Surface Area if descrepency with ESA = Length * Estimated Width (Abs >0.001)
+        Measured Surface Area if descrepency with MSA =  Length * Average Width (Abs >0.001)
 
         :param etlInstance: ETL workflow instance
         :param dmInstance: data management instance which will have the logfile name\
@@ -52,13 +61,11 @@ class etlInstance_QC:
 
                 if field == 'LengthCategoryID':
                     outDF_new, changed = etlInstance_QC.qc_LengthCategoryID(
-                        etlInstance, dmInstance, outDF, field
-                    )
+                        etlInstance, dmInstance, outDF, field)
 
                 elif field == 'FishWeight':
                     outDF_new, changed = etlInstance_QC.qc_FishWeight(
-                        etlInstance, dmInstance, outDF, field
-                    )
+                        etlInstance, dmInstance, outDF, field)
                 else:
                     logMsg = (
                         f"WARNING QC validation failed for "
@@ -227,6 +234,93 @@ class etlInstance_QC:
         InDF = InDF.replace([np.nan, 'nan'], None)
 
         return InDF
+
+    def qc_FishWeight(etlInstance, dmInstance, inDF, field):
+
+        """
+        QC Validation for Fish Weight field. Fish Weight is Total Weight - Bag Weight.
+        Updating if the QC Validation Calulated Fish Weight if >=0.001.
+        Flagging with 'CFCETL' flag -Calculated field value was corrected during extract transform and load
+        quality control validation check.
+
+        :param etlInstance: ETL workflow instance
+        :param dmInstance: data management instance which will have the logfile name\
+        :param inDF: List with QC Validation Fields to be processed
+        :param field: Field in 'inDF' being validated
+
+        :return:
+        inDF - dataframe with the updates 'LengthCategoryID' field
+        changed - variable defining if the inDF passed in the outDFwLookup has been changed - True/False
+
+        """
+
+        try:
+
+            # Variables to push if QC validation fails
+            inDF['FishWeight_QC'] = inDF["TotalWeight"] - inDF["BagWeight"]
+            inDF['FishWeight_Dif'] = inDF["FishWeight"] - inDF["FishWeight_QC"]
+
+            # If the Absolute Difference is >=0.001 then update
+            mask_update = inDF["FishWeight_Dif"].abs() >= 0.001
+
+            countUpdate = mask_update.sum()
+
+            if countUpdate >= 1:
+                # Define Dataframe has been updated
+                changed = True
+
+                flag = "CFCETL"
+                now = datetime.now().strftime("%Y-%m-%d")
+                note = f"Updated - Fish Weight during initial ETL QC Validation - {now}"
+
+                # Update Fish Weight
+                inDF.loc[mask_update, field] = inDF.loc[
+                    mask_update, "FishWeight_QC"]
+
+                # ---- QCField ----
+                inDF.loc[mask_update, "QCFlag"] = (
+                    inDF.loc[mask_update, "QCFlag"]
+                    .fillna(flag)
+                    .where(
+                        inDF.loc[mask_update, "QCFlag"].isna(),
+                        inDF.loc[mask_update, "QCFlag"] + ";" + flag
+                    )
+                )
+
+                # ---- QCNotes ----
+                inDF.loc[mask_update, "QCNotes"] = (
+                    inDF.loc[mask_update, "QCNotes"]
+                    .fillna(f"{note}")
+                    .where(
+                        inDF.loc[mask_update, "QCNotes"].isna(),
+                        inDF.loc[mask_update, "QCNotes"] + " | " + f"{note}"
+                    )
+                )
+
+                logMsg = (f'WARNING - Updated - {countUpdate} - {field} records in '
+                          f'- {etlInstance.protocol} - QC validation - qc_FishWeight')
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.critical(logMsg)
+
+                # Drop the 'FishWeight_QC' and 'FishWeight_Dif' fields
+                inDF = inDF.drop(columns=['FishWeight_QC', 'FishWeight_Dif'])
+
+            else:
+                logMsg = (f'No Updates - for {field} records in '
+                          f'- {etlInstance.protocol} - QC validation - qc_FishWeight')
+
+                dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                logging.info(logMsg)
+
+            return inDF, changed
+
+        except Exception as e:
+
+            logMsg = f'ERROR - ETL_QCValidation - qc_LengthCategoryID: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg)
+            traceback.print_exc(file=sys.stdout)
+
 
     def qc_FishWeight(etlInstance, dmInstance, inDF, field):
 
