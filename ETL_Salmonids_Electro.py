@@ -1,10 +1,10 @@
 """
-ETL_Salmonids_Electro_Siene.py
-Methods/Functions to be used for Salmonids Electrofishing Siene Juneile/Summer ETL workflow.
+ETL_Salmonids_Electro_Seine.py
+Methods/Functions to be used for Salmonids Electrofishing Seine Juneile/Summer ETL workflow.
 
 Updates:
 2/10/2026 - Added QC Validation for Fish Length Category and Fish Weight - via ETL_QCValidation.process_ETLValidation.
-Updated Name to ETL_Salmonids_Electro_Siene.py to more accurately reflect Juvenile/Summer Methods.
+Updated Name to ETL_Salmonids_Electro_Seine.py to more accurately reflect Juvenile/Summer Methods.
 """
 
 # Import Required Libraries
