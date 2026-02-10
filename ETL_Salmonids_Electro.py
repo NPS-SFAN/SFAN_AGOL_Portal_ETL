@@ -1,15 +1,20 @@
 """
-ETL_Salmonids_Electro.py
-Methods/Functions to be used for Salmonids Electrofishing ETL workflow.
+ETL_Salmonids_Electro_Siene.py
+Methods/Functions to be used for Salmonids Electrofishing Siene Juneile/Summer ETL workflow.
+
+Updates:
+2/10/2026 - Added QC Validation for Fish Length Category and Fish Weight - via ETL_QCValidation.process_ETLValidation.
+Updated Name to ETL_Salmonids_Electro_Siene.py to more accurately reflect Juvenile/Summer Methods.
 """
 
-#Import Required Libraries
+# Import Required Libraries
 import pandas as pd
 import numpy as np
 import glob, os, sys
 import traceback
 import generalDM as dm
 import logging
+import ETL_QCValidation as etlQC
 
 class etl_SalmonidsElectro:
     def __init__(self):
@@ -426,7 +431,7 @@ class etl_SalmonidsElectro:
         """
 
         try:
-            #Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
+            # Export the Measurements dataframe Dictionary List - Wild Card in Key is *Measurements*
             inDF = None
             for key, df in outDFDic.items():
                 if 'Measurements' in key:
@@ -501,6 +506,16 @@ class etl_SalmonidsElectro:
             outDFMeasurementswRandom = outDFMeasurements.groupby(['EventID', 'Pass']).apply(assignRandomSampleFirst10)
             ##################################################
 
+            # QC Validation - LengthCategory and Fish Weight.  Within Survey 123 AGOL website external to the form
+            # if an upstream field is changed it is easy to forget to update downstream fields that are auto-calculated
+            # in the data entry form.  Added - 2/10/2026
+
+            qcValidationFields = ['LengthCategoryID', 'FishWeight']
+
+            inDFAppend_postQCVal = etlQC.etlInstance_QC.process_ETLValidation(etlInstance, dmInstance,
+                                                                              outDFMeasurementswRandom,
+                                                                              qcValidationFields)
+
             # Define insert/append query
             insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
                            f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, Injured, '
@@ -510,7 +525,7 @@ class etl_SalmonidsElectro:
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, outDFMeasurementswRandom, "tblSummerMeasurements", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal, "tblSummerMeasurements", insertQuery,
                                             dmInstance)
 
             logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
