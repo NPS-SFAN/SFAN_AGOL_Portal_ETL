@@ -8,7 +8,7 @@ import generalDM as dm
 import ArcGIS_API as agl
 import logging
 import ETL_SNPLPORE as SNPLP
-import ETL_Salmonids_Electro as SEfish
+import ETL_Salmonids_Electro_Seine as SEfish
 import ETL_Salmonids_Smolts as SSmolt
 import ETL_PCM_LocationsManualParking as PCMLOC
 import ETL_PINN_Elephant as PElephant
