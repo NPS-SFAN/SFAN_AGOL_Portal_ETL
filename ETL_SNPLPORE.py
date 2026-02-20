@@ -54,30 +54,30 @@ class etl_SNPLPORE:
             ######
             # Process SNPL Observations Form
             ######
-            outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            #outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######
             # Update Event Detail fields post creation of the Survey and Observation records - added 20241205
             ######
-            outDFEvDetails = etl_SNPLPORE.process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs)
+            #outDFEvDetails = etl_SNPLPORE.process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
             # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
             ######
-            outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
+            #outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
             # Process Predator
             ######
-            outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
+
+            #outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######################
             # Process Nest Repeats - Updates will be pushed to the tbl_Nest_Master and photos exported.
             # NEEDS to be developed.  Will Update existing information and import the attached photos.
             ######################
 
-            outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset)
-
+            outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             logMsg = f"Success ETL_SNPLPORE.py - process_ETLSNPLPORE."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -110,7 +110,7 @@ class etl_SNPLPORE:
         """
 
         try:
-            #Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
             inDF = None
             for key, df in outDFDic.items():
                 if 'Survey' in key:
@@ -170,7 +170,6 @@ class etl_SNPLPORE:
             ############################
             # Define desired field types
             ############################
-
 
             # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
             # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
@@ -436,20 +435,24 @@ class etl_SNPLPORE:
             # Merge Survey and Obs
             outDFSurObs = pd.merge(outDFSurvey, outDFObs, on='Event_ID', how='inner')
 
-
             surveyDF_Subset = outDFObs[['Event_ID', 'SNPL_Male', 'SNPL_Female', 'SNPL_Hatchlings', 'SNPL_Fledglings',
                                         'SNPL_Bands']]
+            # Set null attributes for 'SNPL_Male', 'SNPL_Female', 'SNPL_Hatchlings', 'SNPL_Fledglings', and 'SNPL_Bands'
+            # to zero - Kirk Turn off if Parker Agrees.
+            # Columns to update Null to zero
 
+            # cols = ['SNPL_Male', 'SNPL_Female', 'SNPL_Hatchlings', 'SNPL_Fledglings', 'SNPL_Bands']
+            #
+            # # Replace NaN and empty strings with 0
+            # surveyDF_Subset[cols] = surveyDF_Subset[cols].replace('', 0).fillna(0)
 
             # Group by 'Event_ID' and sum the numerical columns
             grouped_df = surveyDF_Subset.groupby('Event_ID', as_index=False).sum()
 
-
-
             # Add a new column 'Adults' by summing the 'SNPL_Male' and 'SNPL_Female' columns
             grouped_df['Adults'] = grouped_df['SNPL_Male'] + grouped_df['SNPL_Female']
 
-            #Update Query
+            # Update Query
             update_df = grouped_df[['Event_ID', 'Adults', 'SNPL_Hatchlings', 'SNPL_Fledglings', 'SNPL_Bands']].rename(
                 columns={'Adults': 'SNPL_Adults', 'SNPL_Bands': 'SNPL_Banded'})
 
@@ -788,17 +791,20 @@ class etl_SNPLPORE:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def process_NestRepeats(etlInstance, dmInstance, outDFSurvey, outDFSubset):
+    def process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey):
+
         """
         Process the Nest Repeats table to update Nest information in tbl_Nest_Master.  Workflow also processes
         photo attachments in the nest repeats
 
         THIS METHOD NEEDS TO BE DEVELOPED as of 9/30/2025.
 
+        Push Photos to the SNPL_IM\DATA\2025\Photos and the tbl_Nest_Photos table
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance
-        :param outDFSurvey: Survey data frame that was append to the database
-        :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+        :param outDFSurvey: Survey data frame that was appended to the database
 
         :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
         """
@@ -813,22 +819,44 @@ class etl_SNPLPORE:
                     break
 
             # Create initial dataframe subset - STOPPED HERE 9/30/2025
-            outDFSubset = inDF[['ParentGlobalID', 'New Nest ID', 'x', 'y']].rename(
+            outDFSubset = inDF[['ParentGlobalID', 'New Nest ID', 'Long', 'Lat', 'MICRO', 'Restored_Area',
+                                'Restored_Adjacent', 'Ex_Type', 'Date_Exclosure', 'InitiationDateUnk', 'Init_Date',
+                                'Hatchling_Date', 'Fledgling_Date', 'ChickBand_Date', 'NestFailure',
+                                'Failure_Date', 'Failure_Reason', 'Nest Predator Type', 'Nest Notes']].rename(
                 columns={'ParentGlobalID': 'Event_ID',
                          'New Nest ID': 'Nest_ID',
-                         'x': 'X_Coord',
-                         'y': 'Y_Coord'})
+                         'Long': 'X_Coord',
+                         'Lat': 'Y_Coord',
+                         'Nest Predator Type': 'Predator_Type',
+                         'Nest Notes': 'Comments'})
+
+            # Convert all fields to Object Type to insure starting from know field type
+            outDFSubset = outDFSubset.astype('object', copy=False)
+
+            # Convert all nan to None
+            outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
+
+            # Convert Date Fields back to DateTime format
+            dateList = ['Init_Date', 'Hatchling_Date', 'Fledgling_Date', 'ChickBand_Date', 'Date_Exclosure',
+                        'Failure_Date']
+            # Convert Date fields to DT format
+            for col in dateList:
+                outDFSubsetNone[col] = pd.to_datetime(outDFSubsetNone[col], errors='coerce')
+
+            # Convert Date fields to ISO String format (yyyy-mm-dd)
+            for col in dateList:
+                outDFSubsetNone[col] = outDFSubsetNone[col].dt.strftime('%Y-%m-%d').where(outDFSubsetNone[col].notna(), None)
 
 
-
-
+            # STOPPED HERE 2/19/2026 - see spreadsheet https://doimspp.sharepoint.com/:x:/r/sites/nps_imd_sfan/Shared%20Documents/Data%20Management/Monitoring/SnowyPlover_PORE/DigitalDataCollection/SNPLPORE_DigitalDataToDo.xlsx?d=w35fb14aa7947475f86dfb34303ea94b1&csf=1&web=1&e=RETkYQ
+            # Worksheet 'ETL_NestCrossWalk.
 
 
             logMsg = f"Success process_NestRepeats - updated Nest Information in tbl_Nest_Master."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            return outDFNestIDNewAppend
+            return outDFSubset
 
         except Exception as e:
 
@@ -836,7 +864,6 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
-
 
 
 def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset):
