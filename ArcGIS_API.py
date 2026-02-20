@@ -62,8 +62,8 @@ class generalArcGIS:
 
             elif etlInstance.AGOLDownload == 'No': #Use when developing - don't need to download the AGOl data each time
                 # Hard Code the Imported AGOL/Portal data when debuging - turn off lines 53-63 above - crude I know.
-                outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2025\Efish_Siene\SFAN_Salmonids_EFish_2025v1.0_20251114-090056.zip'
-                outName = 'SFAN_Salmonids_EFish_2025v1.0_20251114-090056'
+                outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2025\Survey2025v1.2\SFAN_SNPLPORE_Survey2025v1.2_20250930-152732.zip'
+                outName = 'SFAN_SNPLPORE_Survey2025v1.2_20250930-152732'
 
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
