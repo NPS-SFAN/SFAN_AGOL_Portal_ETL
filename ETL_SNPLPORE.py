@@ -798,8 +798,6 @@ class etl_SNPLPORE:
         Process the Nest Repeats table to update Nest information in tbl_Nest_Master.  Workflow also processes
         photo attachments in the nest repeats
 
-        THIS METHOD NEEDS TO BE DEVELOPED as of 9/30/2025.
-
         Push Photos to the SNPL_IM\DATA\2025\Photos and the tbl_Nest_Photos table
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
@@ -891,6 +889,7 @@ class etl_SNPLPORE:
             # Process Nests with More than one 'Nest_ID' record only -
             ######
 
+            outFun = process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNonewLk)
 
 
 
@@ -1032,6 +1031,58 @@ def process_NestRepeatSingle(etlInstance, dmInstance, outDFSubsetNone):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_nestRepeatSingle: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNone):
+    """
+    Routine to process the nest repeats that have one one record so can be updated to the existing
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param outDFSubsetNone: Nest Survey Data Frame to be processed
+    :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+
+    :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
+    """
+
+    try:
+        # LOGIC To Handle Multiple needs to be defined 2/23/2026
+
+
+        # Subset to only 1 record
+        subset_df = outDFSubsetNone[outDFSubsetNone['Nest_IDCount'] > 1]
+
+        # Drop Fields not being processed
+        dropList = ['NestFailure', 'Event_ID', 'Nest_IDCount']
+        subset_df2 = subset_df.drop(dropList, axis=1)
+
+        # Get Count of records being processed
+        recCount = subset_df2.shape[0]
+
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=subset_df2, target_table="tbl_Nest_Master",
+                                                               source_table=tempTable,
+                                                               join_field="Nest_ID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(subset_df2, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        logMsg = f'Successfully processed the - {recCount} - records in the nest repeat with > 1 Nest ID record'
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_NestRepeatGTOne: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
