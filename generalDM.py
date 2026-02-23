@@ -378,7 +378,7 @@ class generalDMClass:
 
         :return:
         """
-        #Connect via ODBC to Access Database
+        # Connect via ODBC to Access Database
         cnxn = generalDMClass.connect_DB_Access(inDBBE)
 
         try:
@@ -386,6 +386,9 @@ class generalDMClass:
             cursor = cnxn.cursor()
             cursor.execute(inQuery)
             cnxn.commit()
+
+            logMsg = f'Successfully Executed query - {inQuery}'
+            print(logMsg)
 
         except Exception as e:
             print(f"An error occurred in execute query {e}")
@@ -501,6 +504,9 @@ class generalDMClass:
 
         cnxn = generalDMClass.connect_DB_Access(inDBPath)
 
+        # Check if table exist if it does drop it
+        generalDMClass.dropTableFromDB(cnxn, tableName)
+
         # Get column names and types
         columns = df.columns
         dtypes = df.dtypes
@@ -539,7 +545,39 @@ class generalDMClass:
         cursor.close()
         cnxn.close()
 
-        print(f'Created Temp Table - {tableName}')
+        logMsg = f'Created Temp Table - {tableName}'
+        logging.info(logMsg)
+        print(logMsg)
+
+    def dropTableFromDB(conn, tableName):
+        """
+        Drop table from the database if it already exists
+
+        :param conn: PYODBC connection instance
+        :param tableName: Name of table to be dropped
+
+        :return:
+        """
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute(f"DROP TABLE [{tableName}]")
+                try:
+                    conn.commit()
+                    logMsg = f'Successfully Deleted Existing table - {tableName}'
+                    print(logMsg)
+                    logging.info(logMsg)
+
+                except Exception:
+                    pass
+                return True
+            except pyodbc.Error as e:
+                # Access typically raises: "Cannot find the input table or query"
+                # when table doesn't exist; you can check message text if needed.
+                return False
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
     def unZipZip(zipPath, outName, outDir):
         """
@@ -861,6 +899,72 @@ class generalDMClass:
         """
 
         return x.astype(object).where(x.notna(), None)
+
+    def build_access_update_sql(
+            df,
+            target_table,
+            source_table,
+            join_field,
+            include_fields=None,
+            where_clause=None):
+        """
+        Build an MS Access UPDATE INNER JOIN SQL statement dynamically from a dataframe.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            DataFrame whose columns match fields in target_table.
+        target_table : str
+            Name of table being updated.
+        source_table : str
+            Name of temp/staging table containing update values.
+        join_field : str
+            Field used to join tables (must exist in both).
+        include_fields : list, optional
+            Specific fields to update. If None, all df columns except join_field are used.
+        where_clause : str, optional
+            Optional WHERE clause (without the word WHERE).
+
+        Returns
+        -------
+        str
+            Complete Access SQL UPDATE statement.
+        """
+
+        if join_field not in df.columns:
+            raise ValueError(f"Join field '{join_field}' not found in dataframe.")
+
+        # Determine fields to update
+        if include_fields:
+            update_fields = [f for f in include_fields if f != join_field]
+        else:
+            update_fields = [col for col in df.columns if col != join_field]
+
+        if not update_fields:
+            raise ValueError("No fields available to update.")
+
+        # Build SET clause
+        set_clause = ",\n    ".join(
+            [f"{target_table}.[{col}] = {source_table}.[{col}]"
+             for col in update_fields]
+        )
+
+        # Construct SQL
+        sql = f"""
+        UPDATE {target_table}
+        INNER JOIN {source_table}
+            ON {target_table}.[{join_field}] = {source_table}.[{join_field}]
+        SET
+            {set_clause}
+        """
+
+        if where_clause:
+            sql += f"\nWHERE {where_clause}"
+
+        sql += ";"
+
+        return sql.strip()
+
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
