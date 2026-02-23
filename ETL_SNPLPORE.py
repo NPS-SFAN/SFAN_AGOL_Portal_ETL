@@ -10,6 +10,7 @@ import glob, os, sys
 import traceback
 import generalDM as dm
 import logging
+from datetime import datetime
 
 
 class etl_SNPLPORE:
@@ -818,7 +819,7 @@ class etl_SNPLPORE:
                     inDF = df
                     break
 
-            # Create initial dataframe subset - STOPPED HERE 9/30/2025
+            # Create initial dataframe subset
             outDFSubset = inDF[['ParentGlobalID', 'New Nest ID', 'Long', 'Lat', 'MICRO', 'Restored_Area',
                                 'Restored_Adjacent', 'Ex_Type', 'Date_Exclosure', 'InitiationDateUnk', 'Init_Date',
                                 'Hatchling_Date', 'Fledgling_Date', 'ChickBand_Date', 'NestFailure',
@@ -827,8 +828,11 @@ class etl_SNPLPORE:
                          'New Nest ID': 'Nest_ID',
                          'Long': 'X_Coord',
                          'Lat': 'Y_Coord',
+                         'Date_Exclosure': 'Ex_Date',
                          'Nest Predator Type': 'Predator_Type',
-                         'Nest Notes': 'Comments'})
+                         'Nest Notes': 'Comment',
+                         'Hatchling_Date': 'Hatching_Date',
+                         'Fledgling_Date': 'Fledging_Date'})
 
             # Convert all fields to Object Type to insure starting from know field type
             outDFSubset = outDFSubset.astype('object', copy=False)
@@ -837,7 +841,7 @@ class etl_SNPLPORE:
             outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
 
             # Convert Date Fields back to DateTime format
-            dateList = ['Init_Date', 'Hatchling_Date', 'Fledgling_Date', 'ChickBand_Date', 'Date_Exclosure',
+            dateList = ['Init_Date', 'Hatching_Date', 'Fledging_Date', 'ChickBand_Date', 'Ex_Date',
                         'Failure_Date']
             # Convert Date fields to DT format
             for col in dateList:
@@ -847,9 +851,50 @@ class etl_SNPLPORE:
             for col in dateList:
                 outDFSubsetNone[col] = outDFSubsetNone[col].dt.strftime('%Y-%m-%d').where(outDFSubsetNone[col].notna(), None)
 
+            # Add Nest_IDCount field
+            outDFSubsetNone['Nest_IDCount'] = (
+                outDFSubsetNone
+                .groupby('Nest_ID')['Nest_ID']
+                .transform('count'))
 
-            # STOPPED HERE 2/19/2026 - see spreadsheet https://doimspp.sharepoint.com/:x:/r/sites/nps_imd_sfan/Shared%20Documents/Data%20Management/Monitoring/SnowyPlover_PORE/DigitalDataCollection/SNPLPORE_DigitalDataToDo.xlsx?d=w35fb14aa7947475f86dfb34303ea94b1&csf=1&web=1&e=RETkYQ
-            # Worksheet 'ETL_NestCrossWalk.
+            # Add Updated Data, Updated By Fields
+            timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            outDFSubsetNone['Updated_Date'] = timestamp_str
+            outDFSubsetNone['Updated_By'] = etlInstance.inUser
+            outDFSubsetNone['Coord_Units'] = 'Degrees'
+            outDFSubsetNone['Coord_System'] = 'GCS'
+            outDFSubsetNone['Datum'] = 'WGS84'
+
+            # Remove ',' values in the 'MICRO' field
+            outDFSubsetNone['MICRO'] = outDFSubsetNone['MICRO'].str.replace(',', '', regex=False)
+
+            # Set the 'InitiationDateUnk' field to 'True' if value = 'No' else set to None - this fields
+            # logic has been applied backwards in Survey 123
+            outDFSubsetNone['InitiationDateUnk'] = (
+                outDFSubsetNone['InitiationDateUnk']
+                .apply(lambda x: True if x == 'No' else None)
+            )
+
+            ################
+            # Apply Lookups for 'ExclosureType', 'NestFailure',
+            ################
+
+            outDFSubsetNonewLk = applyLookups(etlInstance, dmInstance,outDFSubsetNone)
+
+            ############################################################################
+            # Process Nests with One 'Nest_ID' record only - This can be simple update
+            ######
+
+            outFun = process_NestRepeatSingle(etlInstance, dmInstance, outDFSubsetNonewLk)
+
+            ############################################################################
+            # Process Nests with More than one 'Nest_ID' record only -
+            ######
+
+
+
+
+
 
 
             logMsg = f"Success process_NestRepeats - updated Nest Information in tbl_Nest_Master."
@@ -940,6 +985,57 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
+def process_NestRepeatSingle(etlInstance, dmInstance, outDFSubsetNone):
+    """
+    Routine to process the nest repeats that have one one record so can be updated to the existing
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param outDFSubsetNone: Nest Survey Data Frame to be processed
+    :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+
+    :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
+    """
+
+    try:
+
+        # Subset to only 1 record
+        subset_df = outDFSubsetNone[outDFSubsetNone['Nest_IDCount'] == 1]
+
+        # Drop Fields not being processed
+        dropList = ['NestFailure', 'Event_ID', 'Nest_IDCount']
+        subset_df2 = subset_df.drop(dropList, axis=1)
+
+        # Get Count of records being processed
+        recCount = subset_df2.shape[0]
+
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=subset_df2, target_table="tbl_Nest_Master",
+                                                               source_table=tempTable,
+                                                               join_field="Nest_ID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(subset_df2, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        logMsg = f'Successfully processed the - {recCount} - records in the nest repeat with 1 Nest ID record'
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_nestRepeatSingle: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
 
 def processSNPLContacts(inDF, etlInstance, dmInstance):
     """
@@ -1074,6 +1170,85 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - processSNPLContacts: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def applyLookups(etlInstance, dmInstance, inDF):
+    """
+    Apply the lookup tables for the Nest Repeats: Lookup tables: 'ExclosureType', 'NestFailure'
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param inDF: Nest Repeats Dataframe to which the lookups will be applied
+
+    :return:outDF: Dataframe lookup tables applied.
+    """
+
+    try:
+        ####################
+        # 1 - Exclosure Type
+        ####################
+
+        # Read in the Lookup Table
+        inQuery = f"Select * FROM tlu_ExclosureType';"
+
+        outDFLookupExclosure = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+        # Perform the lookup to field 'Location_ID'
+
+        # Set 'ID' field to 'Object' field type
+        outDFLookupExclosure = outDFLookupExclosure.astype('object', copy=False)
+
+        # Join lookup to table
+        outDFSubsetNone2 = pd.merge(inDF, outDFLookupExclosure[['ID', 'ExclosureCode']], how='left',
+                                    left_on="Ex_Type", right_on="ID", suffixes=("_src", "_lk"))
+
+        # Update the 'Ex_Type' to 'ExclosureCode'
+        outDFSubsetNone2['Ex_Type'] = outDFSubsetNone2['ExclosureCode']
+
+        outDFSubsetNone2 = outDFSubsetNone2.where(pd.notna(outDFSubsetNone2), None)
+
+        # Drop fields in join
+        outDFSubsetNone2 = outDFSubsetNone2.drop(columns=['ID', 'ExclosureCode'])
+
+        logMsg =f'Successfully applied lookup for Nest Exclosure'
+        logging.info(logMsg)
+        print(logMsg)
+
+        ##################
+        # 2 - Nest Failure
+        ##################
+
+        # Read in the Lookup Table
+        inQuery = f"Select * FROM tlu_NestFailure';"
+
+        outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+        # Perform the lookup to field 'Location_ID'
+
+        # Set 'fields to 'Object' field type
+        outDFLookup = outDFLookup.astype('object', copy=False)
+
+        # Join lookup to table
+        outDFSubsetNone3 = pd.merge(outDFSubsetNone2, outDFLookup[['ID', 'NestFailureReason']], how='left',
+                                    left_on="Failure_Reason", right_on="ID", suffixes=("_src", "_lk"))
+
+        # Update the 'Ex_Type' to 'ExclosureCode'
+        outDFSubsetNone3['Failure_Reason'] = outDFSubsetNone3['NestFailureReason']
+
+        outDFSubsetNone3 = outDFSubsetNone3.where(pd.notna(outDFSubsetNone3), None)
+
+        # Drop fields in join
+        outDFSubsetNone3 = outDFSubsetNone3.drop(columns=['ID', 'NestFailureReason'])
+
+        logMsg = f'Successfully applied lookup for Nest Failure Reason'
+        logging.info(logMsg)
+        print(logMsg)
+
+        return outDFSubsetNone3
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - applyLookups - ETL_SNPLPORE.py: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
