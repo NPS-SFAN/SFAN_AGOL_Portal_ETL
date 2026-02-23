@@ -55,7 +55,7 @@ inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\S
 inYear = 2025
 
 #################################
-# AGOL/Portal Variables to define
+# AGOL/Portal Variables to definer
 #################################
 # URL to the AGOL or Portal Path to be processed
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
@@ -137,6 +137,7 @@ def main():
 
     finally:
         exit()
+
 
 def timeFun():
     try:
