@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'SNPLPORE'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260220.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260224.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\PORE_SNPL_FrontEnd_20250930.accdb'
 
 # Year Being Processed
@@ -136,16 +136,6 @@ def main():
         traceback.print_exc(file=sys.stdout)
 
     finally:
-        exit()
-
-
-def timeFun():
-    try:
-        b = datetime.now()
-        messageTime = b.isoformat()
-        return messageTime
-    except:
-        print(f'Failed - timeFun')
         exit()
 
 
