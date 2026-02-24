@@ -18,7 +18,7 @@ class etlInstance:
     # Class Variables
     numETLInstances = 0
 
-    def __init__(self, protocol, inDBBE, inDBFE, flID, yearLU, inUser, outDir, AGOLDownload):
+    def __init__(self, protocol, inDBBE, inDBFE, flID, yearLU, inUser, outDir, AGOLDownload, photoDir):
         """
         Define the instantiated etlInstance attributes
         
@@ -30,7 +30,8 @@ class etlInstance:
         :param inUser: NPS UserNam
         :param outDir: Output directory
         :param AGOLDownload: Define if the AGOL/Portal Feature Layers need to be download, used in when developing code.
-        
+        :param photoDir: Directory where exported photos from survey 123 will be export (e.g. SFAN Server, Local Directory
+
         :return: instantiated self object
         """
 
@@ -42,6 +43,7 @@ class etlInstance:
         self.inUser = inUser
         self.outDir = outDir
         self.AGOLDownload = AGOLDownload
+        self.photoDir = photoDir
 
         # Update the Class Variable
         etlInstance.numETLInstances += 1
@@ -68,7 +70,7 @@ class etlInstance:
             if etlInstance.protocol.lower() == 'snplpore':
                 # Pull the Feature Layer for the defined return as dataframe(s) in list variable outDFList
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
-                outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance)
+                outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance, generalArcGIS)
 
             # ETL Routine Salmonids Electrofishing
             elif etlInstance.protocol.lower() == 'salmonids-efish':
