@@ -11,7 +11,7 @@ import traceback
 import generalDM as dm
 import logging
 from datetime import datetime
-
+import ArcGIS_API as agl
 
 class etl_SNPLPORE:
     def __init__(self):
@@ -31,7 +31,7 @@ class etl_SNPLPORE:
 
         numETL_SNPLPORE += 1
 
-    def process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance):
+    def process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance, generalArcGIS):
 
         """
         Import files in passed folder to dataframe(s). Uses GLOB to get all files in the directory.
@@ -39,7 +39,8 @@ class etl_SNPLPORE:
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance:
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: ArcGIS instance
 
         :return:outETL: String denoting 'Success' or 'Error' on ETL Processing
         """
@@ -74,11 +75,17 @@ class etl_SNPLPORE:
             #outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######################
-            # Process Nest Repeats - Updates will be pushed to the tbl_Nest_Master and photos exported.
-            # NEEDS to be developed.  Will Update existing information and import the attached photos.
+            # Process Nest Repeats - Updates pushed to the tbl_Nest_Master
             ######################
 
-            outDFNestRepeats = etl_SNPLPORE.process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            #outFun = etl_SNPLPORE.process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey)
+
+            ######################
+            # Process Nest Photos - Updates pushed to the tbl_Nest_Photos and exported as .jpg
+            ######################
+
+            outFun = etl_SNPLPORE.process_NestPhotos(outDFDic, etlInstance, dmInstance, generalArcGIS)
+
 
             logMsg = f"Success ETL_SNPLPORE.py - process_ETLSNPLPORE."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -795,17 +802,14 @@ class etl_SNPLPORE:
     def process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey):
 
         """
-        Process the Nest Repeats table to update Nest information in tbl_Nest_Master.  Workflow also processes
-        photo attachments in the nest repeats
-
-        Push Photos to the SNPL_IM\DATA\2025\Photos and the tbl_Nest_Photos table
+        Process the Nest Repeats table to update Nest information in tbl_Nest_Master.
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance
         :param outDFSurvey: Survey data frame that was appended to the database
 
-        :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
+        :return:String - denoting success for failure.
         """
 
         try:
@@ -890,16 +894,11 @@ class etl_SNPLPORE:
 
             outFun = process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNonewLk, outDFSurvey)
 
-
-
-
-
-
             logMsg = f"Success process_NestRepeats - updated Nest Information in tbl_Nest_Master."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            return outDFSubset
+            return "Success"
 
         except Exception as e:
 
@@ -907,6 +906,112 @@ class etl_SNPLPORE:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+
+    def process_NestPhotos(outDFDic, etlInstance, dmInstance, generalArcGIS):
+
+        """
+        Process the Nest Photos in the Nest Repeat. Workflow also pushes photo informatio to the tbl_Nest_Photos table.
+
+        Photos are exported as .jpg to the SNPL_IM\DATA\2025\Photos directory.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: General ArcGIS instance
+
+        :return:String - denoting success for failure.
+        """
+
+        try:
+
+
+           ###############################################
+            # Process Records - Photos import via API REST
+            ##############################################
+
+            # Connect to AGOL - via 'oauth'
+            if generalArcGIS.credentials.lower() == 'oauth':
+                outGIS = agl.connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            # Connect via ArcGISPro Environment
+            else:
+                outGIS = agl.connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+
+            out_Folder = f'{etlInstance.outDir}\\Photos'
+
+            if not os.path.exists(out_Folder):
+                os.makedirs(out_Folder)
+
+            # Process the Photos in the Nest Repeat Layer
+            outPhotosDF = agl.generalArcGIS.download_layer_attachments(outGIS, etlInstance.flID, 'NestsRepeat',
+                                                                     out_Folder, where="1=1")
+
+
+           # Create records in the 'tbl_Nest_Photos' for the nest repeart records which had photos attached
+           # Note - ParentGlobalID in outPhotsDF is the 'GlobalID' in the NestRepeats table - use this to get the NestID
+           # in field 'Nest_ID'
+
+
+
+
+
+           # # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
+           # inDF = None
+           # for key, df in outDFDic.items():
+           #     if 'NestsRepeat' in key:
+           #         inDF = df
+           #         break
+           #
+           # # Create initial dataframe subset
+           # outDFSubset = inDF[['New Nest ID', 'PhotoName']].rename(
+           #     columns={'New Nest ID': 'Nest_ID',
+           #              })
+           #
+           # # Convert all fields to Object Type to insure starting from know field type
+           # outDFSubset = outDFSubset.astype('object', copy=False)
+           #
+           # # Convert all nan to None
+           # outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
+           #
+           # # Define 'Year' field
+           # outDFSubsetNone['ServerLocation'] = etlInstance.yearLU
+           #
+           # # Define the ServerLocation field
+           # outDFSubsetNone['ServerLocation'] = etlInstance.photoDir
+           #
+           # # Grab all column names from the dataframe
+           # cols = outDFSubsetNone.columns.tolist()
+           #
+           # # Append to tbl_Nest_Photos'
+           # # Build the SQL query dynamically
+           # insertQuery = (
+           #     f"INSERT INTO tbl_Nest_Photos ({', '.join(cols)}) "
+           #     f"VALUES ({', '.join(['?'] * len(cols))})")
+           #
+           # cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+           # dm.generalDMClass.appendDataSet(cnxn, outDFSubsetNone, "tbl_Nest_Photos", insertQuery,
+           #                                 dmInstance)
+
+
+
+
+
+
+
+
+            logMsg = f"Success process_NestPhotos - appended records to the tbl_Nest_Photo table."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return outDFSubset
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_NestPhotos: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
 
 
 def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset):
