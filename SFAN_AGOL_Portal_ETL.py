@@ -83,6 +83,10 @@ outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\S
 # processFeatureLayer method when set to 'No'
 AGOLDownload = 'No'  # ('Yes'|'No')
 
+# Directory where exported photos (if appliciable) from survey 123 will be exported (SFAN Azure, Local Directory, etc.)
+photoDir = r'\INPPORE07\Resources\Natural\SNPLOVER\SNPL_IM\DATA\2025\Photos'
+
+
 def main():
     logger = logging.getLogger(__name__)
 
@@ -106,7 +110,7 @@ def main():
 
         # Create the etlInstance instance
         etlInstance = etl.etlInstance(protocol=protocol, inDBBE=inDBBE, inDBFE=inDBFE, flID=layerID, yearLU=inYear,
-                                      inUser=inUser, outDir=outDir, AGOLDownload=AGOLDownload)
+                                      inUser=inUser, outDir=outDir, AGOLDownload=AGOLDownload, photoDir=photoDir)
         # Print the name space of the instance
         print(etlInstance.__dict__)
 
