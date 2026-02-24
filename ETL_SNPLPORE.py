@@ -826,7 +826,6 @@ class etl_SNPLPORE:
                          'New Nest ID': 'Nest_ID',
                          'Long': 'X_Coord',
                          'Lat': 'Y_Coord',
-                         'Date_Exclosure': 'Ex_Date',
                          'Nest Predator Type': 'Predator_Type',
                          'Nest Notes': 'Comment',
                          'Hatchling_Date': 'Hatching_Date',
@@ -839,7 +838,7 @@ class etl_SNPLPORE:
             outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
 
             # Convert Date Fields back to DateTime format
-            dateList = ['Init_Date', 'Hatching_Date', 'Fledging_Date', 'ChickBand_Date', 'Ex_Date',
+            dateList = ['Init_Date', 'Hatching_Date', 'Fledging_Date', 'ChickBand_Date', 'Date_Exclosure',
                         'Failure_Date']
             # Convert Date fields to DT format
             for col in dateList:
@@ -889,7 +888,7 @@ class etl_SNPLPORE:
             # Process Nests with More than one 'Nest_ID' record only -
             ######
 
-            outFun = process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNonewLk)
+            outFun = process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNonewLk, outDFSurvey)
 
 
 
@@ -1036,47 +1035,91 @@ def process_NestRepeatSingle(etlInstance, dmInstance, outDFSubsetNone):
         traceback.print_exc(file=sys.stdout)
 
 
-def process_NestRepeatGTOne(etlInstance, dmInstance, outDFSubsetNone):
+def process_NestRepeatGTOne(etlInstance, dmInstance, inDF, outDFSurvey):
     """
-    Routine to process the nest repeats that have one one record so can be updated to the existing
+    Routine to process the nest repeats that have more than one record
 
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
-    :param outDFSubsetNone: Nest Survey Data Frame to be processed
-    :param outDFSubset: Observation dataframe that are been subset in 'process_Observations'
+    :param inDF: Nest Survey Data Frame to be processed
+    :param outDFSurvey: Survey Dataframe will be used to get the Event Date
 
     :return:outDFNestIDNewAppend: Dataframe with the newly append Nests
     """
 
     try:
-        # LOGIC To Handle Multiple needs to be defined 2/23/2026
-
-
-        # Subset to only 1 record
-        subset_df = outDFSubsetNone[outDFSubsetNone['Nest_IDCount'] > 1]
-
-        # Drop Fields not being processed
-        dropList = ['NestFailure', 'Event_ID', 'Nest_IDCount']
-        subset_df2 = subset_df.drop(dropList, axis=1)
+        # Subset to > 1 Nest_ID record
+        subset_df = inDF[inDF['Nest_IDCount'] > 1]
 
         # Get Count of records being processed
-        recCount = subset_df2.shape[0]
+        recCount = subset_df.shape[0]
 
-        # Temporary Table Created for Updated Query Processing
-        tempTable = 'tmpTable_ETL'
-        # Create the update SQL Statement
-        update_sql = dm.generalDMClass.build_access_update_sql(df=subset_df2, target_table="tbl_Nest_Master",
-                                                               source_table=tempTable,
-                                                               join_field="Nest_ID")
+        # Join lookup to table
+        subset_df2 = pd.merge(subset_df, outDFSurvey[['Event_ID', 'Start_Date']], how='left',
+                              left_on="Event_ID", right_on="Event_ID", suffixes=("_src", "_lk"))
 
-        # Create the temp table
-        dm.generalDMClass.createTableFromDF(subset_df2, tempTable, etlInstance.inDBBE)
+        # Update Comment: append " - Start_Date" if Comment is not null
+        subset_df2['Comment'] = subset_df2.apply(
+            lambda r: (
+                f"{r['Comment']}-{r['Start_Date'].date()}"
+                if pd.notna(r['Comment']) and pd.notna(r['Start_Date'])
+                else r['Comment']
+            ),
+            axis=1
+        )
 
-        # Apply the Update Query to the Access DB using the passed temp table
-        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+        # Sort by Nest_ID and then Start_Date
+        df_sorted = subset_df2.sort_values(by=['Nest_ID', 'Start_Date'], ascending=[True, True])
 
-        logMsg = f'Successfully processed the - {recCount} - records in the nest repeat with > 1 Nest ID record'
+        # Drop Fields not being processed
+        dropList = ['NestFailure', 'Event_ID', 'Nest_IDCount', 'Start_Date']
+        df_sorted = df_sorted.drop(dropList, axis=1)
+
+        # Per Unique Nest_ID iterate through and update the fields
+        unique_nest_ids = df_sorted['Nest_ID'].unique()
+
+        # Iterate through unique values
+        for nest_id in unique_nest_ids:
+            subsetDF = df_sorted[df_sorted['Nest_ID'] == nest_id]
+            print(f"Processing Nest_ID: {nest_id}")
+
+            agg_map = {
+                'MICRO': unique_letters_sorted,  # union of letters across rows, de-duped
+                'Comment': lambda s: concat_join(s, sep='; ')}
+
+            # Default: first non-null for all other columns (except the group key)
+            other_cols = [c for c in subsetDF.columns if c not in ['Nest_ID', 'MICRO', 'Comment']]
+            for c in other_cols:
+                agg_map[c] = first_non_null
+
+            # --- Aggregate per Nest_ID ---
+            resultDF = (
+                subsetDF
+                .groupby('Nest_ID', as_index=False)
+                .agg(agg_map)
+                .sort_values('Nest_ID'))
+
+            # After working through the records by nest push the record to the tbl_Nest_Master via and update join
+            # Temporary Table Created for Updated Query Processing
+            tempTable = 'tmpTable_ETL'
+            # Create the update SQL Statement
+            update_sql = dm.generalDMClass.build_access_update_sql(df=resultDF, target_table="tbl_Nest_Master",
+                                                                   source_table=tempTable,
+                                                                   join_field="Nest_ID")
+
+            # Create the temp table
+            dm.generalDMClass.createTableFromDF(resultDF, tempTable, etlInstance.inDBBE)
+
+            # Apply the Update Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+            logMsg = f"Successfully applied Updates for Nest_ID - {nest_id}"
+            print(logMsg)
+            logging.info(logMsg)
+
+        logMsg = f'Successfully processed the {recCount} records in the nest repeat with > 1 Nest ID record'
         logging.info(logMsg)
+        print(logMsg)
 
         return "Success"
 
@@ -1437,3 +1480,33 @@ def process_Behaviors(etlInstance, dmInstance, outDFSubset):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
+#  Functions for Compiling the Unique Nest_ID values in the Nest Repeats
+
+
+def concat_join(series, sep='; '):
+    """
+    Concatenate all non-null, non-empty, trimmed values with a separator.
+    Returns None if nothing remains.
+    """
+    vals = series.dropna().astype(str).str.strip()
+    vals = [v for v in vals if v]
+    return sep.join(vals) if vals else None
+
+def first_non_null(series):
+    """
+    Return the first non-null value encountered; otherwise None.
+    """
+    s = series.dropna()
+    return s.iloc[0] if len(s) else None
+
+
+def unique_letters_sorted(series):
+    letters = set()
+    for val in series.dropna():
+        letters.update(str(val).strip())
+    letters.discard('')  # guard against empty
+    return ''.join(sorted(letters)) if letters else None
+
+
