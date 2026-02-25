@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'SNPLPORE'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260224.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260225.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\PORE_SNPL_FrontEnd_20250930.accdb'
 
 # Year Being Processed
@@ -83,8 +83,10 @@ outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\S
 # processFeatureLayer method when set to 'No'
 AGOLDownload = 'No'  # ('Yes'|'No')
 
-# Directory where exported photos (if appliciable) from survey 123 will be exported (SFAN Azure, Local Directory, etc.)
-photoDir = r'\INPPORE07\Resources\Natural\SNPLOVER\SNPL_IM\DATA\2025\Photos'
+# Directory where exported photos (if applicable) from survey 123 will be exported (SFAN Azure, Local Directory, etc.)
+# Recommend downloading photos locally then posting to the server afterwards due to slow transfer during processing if
+# you push to the server.
+photoDir = f'{outDir}\\Photos'
 
 
 def main():
