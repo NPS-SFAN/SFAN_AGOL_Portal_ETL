@@ -47,38 +47,39 @@ class etl_SNPLPORE:
 
         try:
 
-
             ######
             # Process Survey Metadata Form
             ######
+
             outDFSurvey = etl_SNPLPORE.process_Survey(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process SNPL Observations Form
             ######
-            #outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            outDFObs = etl_SNPLPORE.process_Observations(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######
             # Update Event Detail fields post creation of the Survey and Observation records - added 20241205
             ######
-            #outDFEvDetails = etl_SNPLPORE.process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs)
+            outDFEvDetails = etl_SNPLPORE.process_EventDetails(etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
             # Process Bands Sub Form - table 'tbl_SNPL_Bands' and 'tbl_ChickBands'
             ######
-            #outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
+
+            outDBands = etl_SNPLPORE.process_Bands(outDFDic, etlInstance, dmInstance, outDFSurvey, outDFObs)
 
             ######
             # Process Predator
             ######
 
-            #outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            outDFPredator = etl_SNPLPORE.process_Predator(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######################
             # Process Nest Repeats - Updates pushed to the tbl_Nest_Master
             ######################
 
-            #outFun = etl_SNPLPORE.process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey)
+            outFun = etl_SNPLPORE.process_NestRepeats(outDFDic, etlInstance, dmInstance, outDFSurvey)
 
             ######################
             # Process Nest Photos - Updates pushed to the tbl_Nest_Photos and exported as .jpg
@@ -925,8 +926,28 @@ class etl_SNPLPORE:
 
         try:
 
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'NestsRepeat' in key:
+                    inDF = df
+                    break
 
-           ###############################################
+            # Create initial dataframe subset
+            outDFSubset = inDF[['New Nest ID', 'GlobalID']].rename(
+                columns={'New Nest ID': 'Nest_ID',
+                         })
+
+            # Convert all fields to Object Type to insure starting from know field type
+            outDFSubset = outDFSubset.astype('object', copy=False)
+
+            # Convert all nan to None
+            outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
+
+            # Define 'Year' field
+            outDFSubsetNone['Year'] = etlInstance.yearLU
+
+            ##############################################
             # Process Records - Photos import via API REST
             ##############################################
 
@@ -937,69 +958,58 @@ class etl_SNPLPORE:
             else:
                 outGIS = agl.connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
 
-            out_Folder = f'{etlInstance.outDir}\\Photos'
-
-            if not os.path.exists(out_Folder):
-                os.makedirs(out_Folder)
-
             # Process the Photos in the Nest Repeat Layer
-            outPhotosDF = agl.generalArcGIS.download_layer_attachments(outGIS, etlInstance.flID, 'NestsRepeat',
-                                                                     out_Folder, where="1=1")
+            outPhotosDF = agl.generalArcGIS.download_layer_attachments(outGIS, etlInstance.flID,  etlInstance.photoDir,
+                                                                       'NestsRepeat', where="1=1")
 
+            # Create records in the 'tbl_Nest_Photos' for the nest repeart records which had photos attached
+            # Note - ParentGlobalID in outPhotsDF is the 'GlobalID' in the NestRepeats table - use  to get the NestID
+            # in field 'Nest_ID'
 
-           # Create records in the 'tbl_Nest_Photos' for the nest repeart records which had photos attached
-           # Note - ParentGlobalID in outPhotsDF is the 'GlobalID' in the NestRepeats table - use this to get the NestID
-           # in field 'Nest_ID'
+            # Join lookup to table
+            outPhotosDFwAtt = pd.merge(outDFSubsetNone, outPhotosDF[['ParentGlobalID', 'ID', 'tempPhotoName']],
+                                       how='inner', left_on="GlobalID", right_on="ParentGlobalID",
+                                       suffixes=("_src", "_lk"))
 
+            # Define the 'PhotoName' field will be Nest_ID and the ID value in the attachment featurelayer - for unique
+            outPhotosDFwAtt['PhotoName'] = outPhotosDFwAtt.apply(lambda row: f"{row['Nest_ID']}_{row['ID']}.jpg", axis=1)
+            # Define the 'Server' Location field - defaulting to the SNPL SFAN Azure location by year
+            serverLoc = fr'\\Files.nps.doi.net\NPS\WASO\Programs\IMD\SFAN\Files\Shared\Monitoring\SnowyPlovers\PORE\DATA\{etlInstance.yearLU}\Photos'
+            outPhotosDFwAtt['ServerLocation'] = serverLoc
 
+            # Iterate through files and rename with the Nest_ID and 'ID" value from the attachment to insure uniqueness
+            for index, row in outPhotosDFwAtt.iterrows():
+                newPhotoName = row['PhotoName']
+                oldPhotoName = row['tempPhotoName']
+                oldFullPath = fr'{etlInstance.photoDir}\{oldPhotoName}'
+                newFullPath = fr'{etlInstance.photoDir}\{newPhotoName}'
 
+                # Rename file
+                os.rename(oldFullPath, newFullPath)
 
+                print(f'Renamed photo - {oldPhotoName} - to - {newPhotoName}')
 
-           # # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Observations*
-           # inDF = None
-           # for key, df in outDFDic.items():
-           #     if 'NestsRepeat' in key:
-           #         inDF = df
-           #         break
-           #
-           # # Create initial dataframe subset
-           # outDFSubset = inDF[['New Nest ID', 'PhotoName']].rename(
-           #     columns={'New Nest ID': 'Nest_ID',
-           #              })
-           #
-           # # Convert all fields to Object Type to insure starting from know field type
-           # outDFSubset = outDFSubset.astype('object', copy=False)
-           #
-           # # Convert all nan to None
-           # outDFSubsetNone = outDFSubset.where(pd.notna(outDFSubset), None)
-           #
-           # # Define 'Year' field
-           # outDFSubsetNone['ServerLocation'] = etlInstance.yearLU
-           #
-           # # Define the ServerLocation field
-           # outDFSubsetNone['ServerLocation'] = etlInstance.photoDir
-           #
-           # # Grab all column names from the dataframe
-           # cols = outDFSubsetNone.columns.tolist()
-           #
-           # # Append to tbl_Nest_Photos'
-           # # Build the SQL query dynamically
-           # insertQuery = (
-           #     f"INSERT INTO tbl_Nest_Photos ({', '.join(cols)}) "
-           #     f"VALUES ({', '.join(['?'] * len(cols))})")
-           #
-           # cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-           # dm.generalDMClass.appendDataSet(cnxn, outDFSubsetNone, "tbl_Nest_Photos", insertQuery,
-           #                                 dmInstance)
+            # Fields to drop
+            fieldListDrop = ['ParentGlobalID', 'ID', 'tempPhotoName', 'GlobalID']
+            outPhotosDFwAtt.drop(fieldListDrop, axis=1, inplace=True)
 
+            # Append the records that had photo attachments
+            # Grab all column names from the dataframe
+            cols = outPhotosDFwAtt.columns.tolist()
 
+            recCount = outPhotosDFwAtt.shape[0]
 
+            # Append to tbl_Nest_Photos'
+            # Build the SQL query dynamically
+            insertQuery = (
+               f"INSERT INTO tbl_Nest_Photos ({', '.join(cols)}) "
+               f"VALUES ({', '.join(['?'] * len(cols))})")
 
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outPhotosDFwAtt, "tbl_Nest_Photos", insertQuery,
+                                           dmInstance)
 
-
-
-
-            logMsg = f"Success process_NestPhotos - appended records to the tbl_Nest_Photo table."
+            logMsg = f"Success process_NestPhotos - appended - {recCount} - records to the tbl_Nest_Photo table."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
