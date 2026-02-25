@@ -86,79 +86,88 @@ class generalArcGIS:
             logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
 
-    def download_layer_attachments(gis, item_id, layer_name, out_Folder, where="1=1"):
+    def download_layer_attachments(gis, item_id, out_Folder, layer_name, where="1=1"):
         """
         Download photo attachments from a specific layer.
 
         :param gis: Authenticated GIS object
         :param item_id: Hosted feature layer collection item ID
+        :param out_Folder: Output folder for the imported photos
         :param layer_name: Layer name (e.g., 'NestRepeats')
-        :param out_Folder: Local directory to save photos
         :param where: SQL filter required
+
 
         :return outDFPhotosDF - Dataframe define the photos that have been processed
         """
+        try:
+            if not os.path.exists(out_Folder):
+                os.makedirs(out_Folder)
 
-        if not os.path.exists(out_Folder):
-            os.makedirs(out_Folder)
+            flc_item = gis.content.get(item_id)
+            flc = FeatureLayerCollection.fromitem(flc_item)
 
-        flc_item = gis.content.get(item_id)
-        flc = FeatureLayerCollection.fromitem(flc_item)
+            # Find target layer
+            target_layer = next(
+                (lyr for lyr in flc.layers if lyr.properties.name == layer_name),
+                None)
 
-        # Find target layer
-        target_layer = next(
-            (lyr for lyr in flc.layers if lyr.properties.name == layer_name),
-            None
-        )
+            if not target_layer:
+                raise ValueError(f"Layer '{layer_name}' not found.")
 
-        if not target_layer:
-            raise ValueError(f"Layer '{layer_name}' not found.")
+            # Dataframe to be populated with the ID, PhotoName, and parentGlobalID - will join on Photo Nest to
+            # define the records to be created in the 'tbl_Nest_Photos' table.
+            outDFPhotosDF = pd.DataFrame(columns=['ID', 'tempPhotoName', 'ParentGlobalID'])
 
-        # Dataframe to be populated with the ID, PhotoName, and parentGlobalID - will join on Photo Nest to
-        # define the records to be created in the 'tbl_Nest_Photos' table.
-        outDFPhotosDF = pd.DataFrame(columns=['ID', 'photoName', 'parentGlobalID'])
+            # List to Hold the photo record values exported to a photo
+            rows = []
 
-        # List to Hold the photo record values exported to a photo
-        rows = []
+            # Query features
+            features = target_layer.query(where=where, out_fields="*").features
 
-        # Query features
-        features = target_layer.query(where=where, out_fields="*").features
+            for feature in features:
+                oid = feature.attributes[target_layer.properties.objectIdField]
+                attachments = target_layer.attachments.get_list(oid)
 
-        for feature in features:
-            oid = feature.attributes[target_layer.properties.objectIdField]
-            attachments = target_layer.attachments.get_list(oid)
+                # If attachment present download
+                for att in attachments:
+                    att_id = att["id"]
+                    photoName1 = att["name"]
+                    photoName = f'{att_id}_{photoName1}'
+                    parentGlobalId = att['parentGlobalId']
 
-            # If attachment present download
-            for att in attachments:
-                att_id = att["id"]
-                photoName = f'{att['name']}.jpg'
-                parentGlobalId = att['parentGlobalId']
+                    downloaded_path = target_layer.attachments.download(
+                        oid=oid,
+                        attachment_id=att_id,
+                        save_path=out_Folder)
 
-                downloaded_path  = target_layer.attachments.download(
-                    oid=oid,
-                    attachment_id=att_id,
-                    save_path=out_Folder)
+                    # Build desired file name
+                    new_path = os.path.join(out_Folder, photoName)
+                    # List to String
+                    dPathStr = downloaded_path[0]
 
-                # Add values to rows
-                rows.append({
-                    'ID': att_id,
-                    'PhotoName': photoName,
-                    'ParentGlobalID': parentGlobalId
-                })
+                    # Rename file
+                    os.rename(dPathStr, new_path)
 
-                # Build desired file name
-                new_filename = f"{photoName}"
-                new_path = os.path.join(out_Folder, new_filename)
+                    # Add values to rows
+                    rows.append({
+                        'ID': att_id,
+                        'tempPhotoName': photoName,
+                        'ParentGlobalID': parentGlobalId
+                    })
 
-                # Rename file
-                os.rename(downloaded_path, new_path)
+                    logMsg = f'Successfully downloaded photo - {photoName} - {parentGlobalId}'
+                    print(logMsg)
 
-                logMsg = f'Succesfully downloaded photo - {new_filename} - {parentGlobalId}'
+            # If df already exists with same columns:
+            outDFPhotosDF = pd.concat([outDFPhotosDF, pd.DataFrame(rows)], ignore_index=True)
 
-        # If df already exists with same columns:
-        outDFPhotosDF = pd.concat([outDFPhotosDF, pd.DataFrame(rows)], ignore_index=True)
+            return outDFPhotosDF
 
-        return outDFPhotosDF
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ArcGIS_API.py - download_layer_attachments: {e}'
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
 
 def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
     """
