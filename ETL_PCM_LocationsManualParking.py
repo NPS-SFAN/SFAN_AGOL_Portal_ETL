@@ -73,7 +73,7 @@ class etl_PCMLocations:
             locFieldList = ['LocationID', 'LocName', 'UnitCode', 'VegCode', 'VegDescription',
                             'Latitude', 'Longitude', 'Aspect', 'A_Aspect', 'B_Aspect', 'C_Aspect', 'CountOfEvents',
                             'FirstEventDate', 'LastEventDate', 'LastPlotNotes', 'LastDisturbancesNotes', 'HikeDistance',
-                            'HikeTime', 'Directions', 'SpecialAccess', 'Hazards', 'RequiredPPE',
+                            'HikeTime', 'GISPathDistance', 'Directions', 'SpecialAccess', 'Hazards', 'RequiredPPE',
                             'TransectPhotoNPGallery', 'NumberRebarMissing', 'ManualInfoUpdatedUser',
                             'ManualInfodateLastUpdated']
 
