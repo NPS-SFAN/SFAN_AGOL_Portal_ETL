@@ -248,6 +248,9 @@ def loadDataFrameToFeatureLayer(inDF, inDic, outGIS, etlPCMInstance):
             logMsg = f'Deleted existing Feature Layer - {featureLayerName}'
             logging.info(logMsg)
 
+        # Set Null to None every where
+        inDF = inDF.astype(object).where(pd.notnull(inDF), None)
+
         # Create the Feature Layer item
         feature_layer_item = outGIS.content.import_data(inDF, folder=etlPCMInstance.Folder)
         feature_layer_item.update(inDic)
