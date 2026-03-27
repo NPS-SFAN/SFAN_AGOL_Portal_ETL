@@ -70,6 +70,14 @@ class etl_PINNElephant:
             ######
             outDFDisturbance = etl_PINNElephant.process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance)
 
+            ######
+            # Consolidate Events collected on multiple tablets - STOPPED HERE 3/27/2026
+            ######
+            outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFDic, outDFEvents, etlInstance,
+                                                                             dmInstance)
+
+
+
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
@@ -635,6 +643,20 @@ class etl_PINNElephant:
             # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
             combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, combinedOtherDF], ignore_index=True)
 
+
+            #######
+            # New workflow March 2026 to handle newly added 'DeadPup' field not in the 2025 workflow
+            #######
+
+            # Add 'Qualifier' and 'QCFlag' fields
+            combinedAllCountsDF[['Qualifier', 'QCFlag']] = pd.NA
+
+            # Define 'Qualifier' and 'QCFlag' fields to 'DEAD' where 'DEPUP'
+            combinedAllCountsDF.loc[combinedAllCountsDF['MatureCode'] == 'DEPUP', ['Qualifier', 'QCFlag']] = 'DEAD'
+
+            # Change DEPUP MatureCode values to EPUP
+            combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].replace('DEPUP', 'EPUP')
+
             # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
             duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
 
@@ -649,14 +671,14 @@ class etl_PINNElephant:
                 duplicates_all.to_csv(outPath, index=True)
 
                 msgLog = f'Duplicate Records in the Counts Data Frame to be appended see export - {outPath}'
-                logging.critical(logMsg, exc_info=True)
+                logging.critical(msgLog, exc_info=True)
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             combinedAllCountsDF = combinedAllCountsDF.replace([np.nan, 'nan'], None)
 
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
-                           f'MatureCode, Enumeration, QCNotes) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                           f'MatureCode, Enumeration, QCNotes, Qualifier, QCFlag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, combinedAllCountsDF, "tblSealCount", insertQuery, dmInstance)
@@ -756,7 +778,7 @@ class etl_PINNElephant:
                                              left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
 
             ############
-            # Create the Resight  EVent Table Records - this will be an import of the 'outDFEvents'
+            # Create the Resight  Event Table Records - this will be an import of the 'outDFEvents_Resight'
             ############
 
             outDFResightEvents = processResightEvents(outDFEvents_Resight, etlInstance, dmInstance)
@@ -880,6 +902,44 @@ class etl_PINNElephant:
         except Exception as e:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Disturbance: {e}'
             logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+    def process_MultipleTabletEvents(outDFDic, outDFEvents, etlInstance, dmInstance):
+        """
+        ETL routine for Events that where collected on multiple events/tablets.  Using multiple tablets is common
+        data collection practice for Elephant seal monitoring.
+
+        After initial processing of all events this workflow  identifies when multiple events/tablets on the same
+        day and retains one event and migrated all other associated events to the select event.
+
+        Workflow consolidates all information across all related events (e.g. Min and Max Start Times, all observers,
+        etc.,) and updates related monitoring components/tables to the master event.  After successful migration of
+        all events to the master event these migrated events are deleted in the event table.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:String denoting Success or Failed
+        """
+
+        try:
+
+
+
+            logMsg = f'Success process_MultipleTabletEvents method'
+            logging.info(logMsg, exc_info=True)
+
+            return "Success"
+
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_MultipleTabletEvents: {e}'
+
+            logging.critical(logMsg, exc_info=True)
+
             traceback.print_exc(file=sys.stdout)
 
 
@@ -1014,8 +1074,7 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
         # Check for Lookups not defined via an outer join.
         # If is null then these are undefined contacts
         dfObserversNull = dfObserversOtherwLK[
-            dfObserversOtherwLK['ObserverID'].isna() | (dfObserversOtherwLK['ObserverID'] == 389)
-            ]
+            dfObserversOtherwLK['ObserverID'].isna()]
 
         numRec = dfObserversNull.shape[0]
         if numRec >= 1:
