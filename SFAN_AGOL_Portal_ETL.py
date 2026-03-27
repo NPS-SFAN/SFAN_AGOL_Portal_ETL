@@ -15,17 +15,21 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
-As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed - KRS
+As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed - Updates in Process 3/27/2026 for split events.
 As of 6/3/2025 - Salmonids Smolts ETL workflow developed - KRS
 
 Output:
 
-Python Environment: arcgispro_py3pt3 - Python 3.11, clone of the ArcGISPro 3.3 environment to all for ArcPY
-pywin32
+Python Environment: arcgispro-py3-entra2 - Python 3.11, clone of the ArcGISPro 3.3 environment in entra for ArcPY
+Note pywin 32 was imported from the Arcgis pro clone
 
 Date Developed - August 2024
 Development Status - Ongoing
 Created By - Kirk Sherrill - Data Scientist/Manager San Francisco Bay Area Network Inventory and Monitoring
+
+
+
+
 """
 
 # Import Libraries
@@ -46,13 +50,13 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol/Item Being Processes
-protocol = 'SNPLPORE'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
+protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260225.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\PORE_SNPL_FrontEnd_20250930.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20260327wETL.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedFE_20251208.accdb'
 
 # Year Being Processed
-inYear = 2025
+inYear = 2026
 
 #################################
 # AGOL/Portal Variables to definer
@@ -61,7 +65,7 @@ inYear = 2025
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "3366661c659b44029119c690a6b88f5e"
+layerID = "3ffd5660210e4064aa685cc95dee43b9"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
@@ -76,7 +80,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2025'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
