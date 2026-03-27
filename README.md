@@ -1,3 +1,8 @@
+
+# Elephant Seal ETL Updates March 2026
+- To handle split events across multple tablets
+  
+
 # SFAN_AGOL_Portal ETL
 San Francisco Bay Area Network AGOL and Portal Extract Transform and Load routines.  
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.\
