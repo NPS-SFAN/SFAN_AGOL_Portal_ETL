@@ -13,6 +13,7 @@ import logging
 import psutil
 from zipfile import ZipFile
 import glob
+import numpy as np
 
 class generalDMClass:
 
@@ -382,6 +383,7 @@ class generalDMClass:
         cnxn = generalDMClass.connect_DB_Access(inDBBE)
 
         try:
+
             # Create a cursor object
             cursor = cnxn.cursor()
             cursor.execute(inQuery)
@@ -965,6 +967,17 @@ class generalDMClass:
 
         return sql.strip()
 
+    # Concatenate Field to string
+    def concat_comments(s: pd.Series) -> str:
+        s = s.dropna().astype(str).str.strip()
+        s = s[s.ne('')]
+        return ' | '.join(pd.unique(s))
+
+    # Take the first not null value in a dataframe field workflow
+    def first_not_null(s: pd.Series):
+        # Treat empty strings as nulls too
+        s_clean = s.replace('', np.nan).dropna()
+        return s_clean.iloc[0] if not s_clean.empty else np.nan
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
