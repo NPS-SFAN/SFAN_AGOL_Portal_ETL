@@ -66,7 +66,7 @@ class etl_PINNElephant:
             ######
             # Process Resights Form - Create Resight Events and Resight Records
             ######
-            outDFResights = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFResightEvents = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
 
             ######
             # Process Observations Form
@@ -76,7 +76,8 @@ class etl_PINNElephant:
             ######
             # Consolidate Events collected on multiple tablets
             ######
-            outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
+             outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
+                                                                                    outDFResightEvents,
                                                                                     etlInstance,
                                                                                     dmInstance)
 
@@ -721,7 +722,7 @@ class etl_PINNElephant:
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:outDFCounts: Dataframe of the exported Count table records will be used in subsequent ETL Routines.
+        :return:outDFResightEvents: Dataframe append to Resight Events.
         """
 
         try:
@@ -795,7 +796,7 @@ class etl_PINNElephant:
             logMsg = f'Success process_Resights ETL Routine'
             logging.info(logMsg, exc_info=True)
 
-            return outDFResightRec
+            return outDFResightEvents
 
         except Exception as e:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Resights: {e}'
@@ -907,7 +908,7 @@ class etl_PINNElephant:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
 
-    def process_MultipleTabletEvents(outDFEvents, outDFElephantEvents, etlInstance, dmInstance):
+    def process_MultipleTabletEvents(outDFEvents, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
         """
         ETL routine for Events that where collected on multiple events/tablets.  Using multiple tablets is common
         data collection practice for Elephant seal monitoring.
@@ -922,6 +923,7 @@ class etl_PINNElephant:
 
         :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
         :param outDFElephantEvents - Elephant Seal Events
+        :param outDFResightEvents - Resight Events
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
@@ -934,10 +936,14 @@ class etl_PINNElephant:
             outUniqueEventsDF = uniqueEvents(outDFEvents, etlInstance, dmInstance)
 
 
-            # Consolidate the Events with Multiple Events - will push an Update back to the Events Table
-            outUniqueEventsDF = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, dmInstance)
+            # Consolidate the Events with Multiple/Split Events - will push an Update back to the Events Table
+            outUniqueEventsDF = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
+                                                       etlInstance, dmInstance)
 
-            # Update events with multiple to the Master Event
+            # Update Downstream Tables with Multiple/Split Events to the Master Event
+            outFun = updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance)
+
+
 
 
             # Delete the Events with more then 1 - these have been migrated
@@ -1463,7 +1469,7 @@ def uniqueEvents(outDFEvents, etlInstance, dmInstance):
         traceback.print_exc(file=sys.stdout)
 
 
-def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, dmInstance):
+def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
 
     """
     Parent Script for workflow to consolidate/merage the Event tables when multiple tablet data collection.
@@ -1473,8 +1479,9 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, 
     Collection Device - Compiled
 
 
-    :param outUniqueEventsDF: Events Dataframe being processed
+    :param outUniqueEventsDF: Events Dataframe with the Multiple/Split Events
     :param outDFElephantEvents: Elephant Seals Event dataframe
+    :param outDFResightEvents: Resight Event dataframe
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
@@ -1486,24 +1493,14 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, 
         # Subset to only the Records that are split events.
         eventsWithMultiple = outUniqueEventsDF[outUniqueEventsDF['RecordCount'] > 1]
 
-        # Consolidate tblEvents - Min StartTime, Max EndTime, GlobalID - Concatenate
+        # Consolidate tblEvents
         outFun = consolidateTblEvents(eventsWithMultiple, etlInstance, dmInstance)
 
-        # Consolidate tblElephantEvents -
+        # Consolidate tblElephantEvents
         outFun = consolidateTblElephantEvents(eventsWithMultiple, outDFElephantEvents, etlInstance, dmInstance)
 
-        # Consolidate tblResightEvents - STOPPED HERE 3/30/2026 - Comments, Visibility
-        outFun = consolidateTblResightEvents(eventsWithMultiple, etlInstance, dmInstance)
-
-
-        # If SurveyNo is null grab first,
-        # If Visibility null grab first one
-
-        # Consolidate tblResightEvents - Comments.  If Visibility null grab first one
-
-
-
-
+        # Consolidate tblResightEvents
+        outFun = consolidateTblResightEvents(eventsWithMultiple, outDFResightEvents, etlInstance, dmInstance)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateSplitEvents"
         logging.info(logMsg)
@@ -1516,6 +1513,49 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, 
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+
+def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
+
+    """
+    Update the downstream tables EventID to the Master Event EventID for the Multi/Split Event records.
+
+
+    :param outUniqueEventsDF: Events Dataframe with the Multiple/Split Events
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+       tableList = ['tblEventObservers', 'tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
+                    'tblDisturbanceBehav', 'tblSubSitesNotSurveyed']
+
+
+
+
+
+
+
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - updateToMasterEventID: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+
+
+
 
 def consolidateTblEvents(outUniqueEventsDF, etlInstance, dmInstance):
 
@@ -1616,7 +1656,7 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
     RegionalCountCode=('RegionalCountCode', dm.generalDMClass.first_not_null - First Not Null
 
     :param outUniqueEventsDF: Events Dataframe being processed
-    :param outDFElephantEvents: Output Elephant Seals Dataframe
+    :param outDFElephantEvents: Output Elephant Events Dataframe
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
@@ -1709,6 +1749,104 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
     except Exception as e:
 
         logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateElephantEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstance, dmInstance):
+
+    """
+    Consolidate tblResightEvents -
+    Updates are pushed back to the tblElephantEvents table
+
+    Logic applied to multiple records:
+    Comments=('Comments', dm.generalDMClass.concat_comments) - Concatenates
+    Visibility=('Visibility', dm.generalDMClass.first_not_null - First Not Null
+    Park Code - First Not Null
+    Season - First Not Null
+
+    :param outUniqueEventsDF: Events Dataframe being processed
+    :param outDFResightEvents: Output Resight Events Dataframe
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+        #Only Need the EventID field the Comments, Visibility, Season, and ParkCode values are also in the Event DF
+        outDFResightEvents_subset = outDFResightEvents[['EventID']]
+        #Inner Join on the events needing update
+        resightEventsMerge = pd.merge(
+            outUniqueEventsDF,
+            outDFResightEvents_subset,
+            left_on= 'EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Unique Fields
+        grp_keys = ['ProjectCode', 'StartDate']
+
+        # 1) Aggregated values per Unique Key
+        agg = (resightEventsMerge.groupby(grp_keys)
+              .agg(
+                Comments=('Comments', dm.generalDMClass.concat_comments),
+                Visibility=('Visibility', dm.generalDMClass.first_not_null),
+                Season=('Season', dm.generalDMClass.first_not_null),
+                ParkCode=('ParkCode', dm.generalDMClass.first_not_null),
+                )
+               .reset_index()
+               )
+
+        # 2) Keep exactly one master row per group ---
+        masters = (resightEventsMerge[resightEventsMerge['MasterEvent'].str.upper().eq('YES')]
+                   .sort_values(grp_keys + ['StartTime'])  # tie-breaker if needed
+                   .drop_duplicates(grp_keys, keep='first'))
+
+        # 3) Merge aggregated fields onto masters ---
+        resightEventsMerge2 = (masters
+                            .drop(columns=['Comments', 'Visibility', 'Season', 'ParkCode'])  # will replace with agg values
+                            .merge(agg, on=grp_keys, how='left')
+                            .sort_values(grp_keys))
+
+        # Perform the Update Query
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Subset to Only the fields needing update:
+        cols_needed = ['EventID', 'Comments', 'Visibility', 'Season', 'ParkCode']
+        eventsDFToUpdateFinal = resightEventsMerge2[cols_needed]
+
+        # Set Nan to None
+        eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
+
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblResightEvents",
+                                                               source_table=tempTable,
+                                                               join_field="EventID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(eventsDFToUpdateFinal, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        # Get Count of records being processed
+        recCount = eventsDFToUpdateFinal.shape[0]
+
+        logMsg = f'Successfully Updated Multi-Table Events for - {recCount} - records in tblResightEvents'
+        logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateTblResightEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateTblResightEvents: {e}'
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
