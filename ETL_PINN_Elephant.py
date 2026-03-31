@@ -76,7 +76,7 @@ class etl_PINNElephant:
             ######
             # Consolidate Events collected on multiple tablets
             ######
-             outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
+            outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
                                                                                     outDFResightEvents,
                                                                                     etlInstance,
                                                                                     dmInstance)
@@ -937,12 +937,14 @@ class etl_PINNElephant:
 
 
             # Consolidate the Events with Multiple/Split Events - will push an Update back to the Events Table
-            outUniqueEventsDF = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
+            outFun = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
                                                        etlInstance, dmInstance)
 
-            # Update Downstream Tables with Multiple/Split Events to the Master Event
-            outFun = updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance)
+            # Update Downstream Tables with Multiple/Split Events to the Master Event - t
+            notMasterEventsFinal = updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance)
 
+
+            # Process the blEventObservers Not Master - duplicates must be deleted prior to update query
 
 
 
@@ -1299,6 +1301,12 @@ def processResightRecords(inDF, etlInstance, dmInstance):
                 lambda x: x.upper() if isinstance(x, str) else x
             )
 
+        # Trim all DyeCode String Decimal points to integer (e.g. 2.0 to 2, etc.) so lookup has match in tluDyeCode.
+        # append query
+        inDFResightRec2['DyeCode'] = (
+            inDFResightRec2['DyeCode']
+            .where(inDFResightRec2['DyeCode'].isna(), inDFResightRec2['DyeCode'].astype(str).str.split('.').str[0]))
+
         # Append to the 'tblResights' table
         insertQuery = (
             f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
@@ -1525,25 +1533,61 @@ def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
-    :return String - denoting success or failure
+    :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
+    should be defined.
     """
 
     try:
 
-       tableList = ['tblEventObservers', 'tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
-                    'tblDisturbanceBehav', 'tblSubSitesNotSurveyed']
+        # For table Xwalk to the Master EventID
+        # Step 1: Create a helper column with master EventID only where MasterEvent == "Yes"
+        outUniqueEventsDF['MasterEventID'] = np.where(outUniqueEventsDF['MasterEvent'] == 'Yes', outUniqueEventsDF['EventID'], np.nan)
+
+        # Step 2: Forward/backward fill within each group to propagate the master ID
+        outUniqueEventsDF['MasterEventID'] = (
+            outUniqueEventsDF.groupby(['ProjectCode', 'StartDate'])['MasterEventID']
+            .transform(lambda x: x.ffill().bfill())
+        )
+
+        # Only Process MasterEvent not - 'No'
+        notMasterEventsDF = outUniqueEventsDF[outUniqueEventsDF['MasterEvent'] == 'No']
+
+        # Subset to the 'EventID' and 'MasterEventID' fields
+        cols_needed = ['EventID', 'MasterEventID']
+        notMasterEventsFinal = notMasterEventsDF[cols_needed]
 
 
+        tableList = ['tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
+                    'tblSubSitesNotSurveyed']
 
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
 
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(notMasterEventsFinal, tempTable, etlInstance.inDBBE)
 
+        # Get Count of records being processed
+        recCount = notMasterEventsFinal.shape[0]
 
+        # Process the tables in need of update
+        for table in tableList:
 
+            # Create the update SQL Statement
+            update_sql = dm.generalDMClass.build_access_update_sqlEventID(df=notMasterEventsFinal,
+                                                                   target_table=table,
+                                                                   source_table=tempTable,
+                                                                   join_field="EventID")
+
+            # Apply the Update Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+            logMsg = f'Successfully Updated EventID to the MasterEventID in - {table} - {recCount} - records updated.'
+            logging.info(logMsg)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
         logging.info(logMsg)
 
-        return "Success"
+        return notMasterEventsFinal
 
     except Exception as e:
 
@@ -1819,8 +1863,16 @@ def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstan
         cols_needed = ['EventID', 'Comments', 'Visibility', 'Season', 'ParkCode']
         eventsDFToUpdateFinal = resightEventsMerge2[cols_needed]
 
-        # Set Nan to None
-        eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
+        # # Set Nan to None
+        # eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
+
+        # Comments to None including white space ''
+        eventsDFToUpdateFinal['Comments'] = (
+            eventsDFToUpdateFinal['Comments']
+            .astype(object)
+            .replace(r'^\s*$', None, regex=True)  # empty or whitespace → None
+        )
+
 
         # Create the update SQL Statement
         update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblResightEvents",
