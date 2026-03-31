@@ -967,6 +967,71 @@ class generalDMClass:
 
         return sql.strip()
 
+    def build_access_update_sqlEventID(
+            df,
+            target_table,
+            source_table,
+            join_field):
+        """
+        Build MS Access SQL to update EventID = MasterEventID via INNER JOIN. Being used in Elephant Seals Pinnipeds
+        processing when events split across multiple tablets.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Must contain join_field and 'MasterEventID'.
+        target_table : str
+            Table being updated.
+        source_table : str
+            Temp/staging table with MasterEventID values.
+        join_field : str
+            Field used to join tables.
+
+
+        Returns
+        -------
+        str
+            SQL UPDATE statement.
+        """
+
+        # Validation
+        required_cols = {join_field, 'MasterEventID'}
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
+        # Base SQL
+        sql = f"""
+        UPDATE {target_table}
+        INNER JOIN {source_table}
+            ON {target_table}.[{join_field}] = {source_table}.[{join_field}]
+        SET
+            {target_table}.[EventID] = {source_table}.[MasterEventID]
+        """
+
+        sql += ";"
+
+        return sql.strip()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Concatenate Field to string
     def concat_comments(s: pd.Series) -> str:
         s = s.dropna().astype(str).str.strip()
