@@ -1492,13 +1492,12 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, 
         # Consolidate tblElephantEvents -
         outFun = consolidateTblElephantEvents(eventsWithMultiple, outDFElephantEvents, etlInstance, dmInstance)
 
-        # Consolidate tblResightEvents - STOPPED HERE 3/30/2026
+        # Consolidate tblResightEvents - STOPPED HERE 3/30/2026 - Comments, Visibility
         outFun = consolidateTblResightEvents(eventsWithMultiple, etlInstance, dmInstance)
 
 
         # If SurveyNo is null grab first,
         # If Visibility null grab first one
-
 
         # Consolidate tblResightEvents - Comments.  If Visibility null grab first one
 
@@ -1608,9 +1607,13 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
     Consolidate tblElephantEvents -
     Updates are pushed back to the tblElephantEvents table
 
-    CollectionDeviceID adding subsequent Device IDs as note to comments
-    Comments (concatenate)
-    If Visibility is null on Master Take the first that is not null
+    Logic applied to multiple records:
+    Comments=('Comments', dm.generalDMClass.concat_comments) - Concatenates
+    DeviceListCompiled=('CollectionDeviceID', dm.generalDMClass.concat_comments - Concatenates
+    Visibility=('Visibility', dm.generalDMClass.first_not_null - First Not Null
+    SurveyType=('SurveyType', dm.generalDMClass.first_not_null - First Not Null
+    RegionalSurvey=('RegionalSurvey', 'any') - Takes first Not Null RegionalSurvey if present
+    RegionalCountCode=('RegionalCountCode', dm.generalDMClass.first_not_null - First Not Null
 
     :param outUniqueEventsDF: Events Dataframe being processed
     :param outDFElephantEvents: Output Elephant Seals Dataframe
@@ -1623,8 +1626,8 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
     try:
 
         #Only Need the CollectiveDeviceID field
-        outDFElephantEvents_subset = outDFElephantEvents[['EventID', 'CollectionDeviceID']]
-
+        outDFElephantEvents_subset = outDFElephantEvents[['EventID', 'CollectionDeviceID', 'SurveyType',
+                                                          'RegionalSurvey', 'RegionalCountCode']]
         #Inner Join On the Elephant Seal Events, only these need updating
         elephantEventsMerge = pd.merge(
             outUniqueEventsDF,
@@ -1632,9 +1635,6 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
             left_on= 'EventID',
             right_on='EventID',
             how='inner')
-
-        # elephantEventsMerge = outUniqueEventsDF[
-        #     outUniqueEventsDF['EventID'].isin(outDFElephantEvents['EventID'])].copy()
 
         # Unique Fields
         grp_keys = ['ProjectCode', 'StartDate']
@@ -1644,7 +1644,13 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
               .agg(
                 Comments=('Comments', dm.generalDMClass.concat_comments),
                 DeviceListCompiled=('CollectionDeviceID', dm.generalDMClass.concat_comments),
-                Visibility=('Visibility', dm.generalDMClass.first_not_null)).reset_index())
+                Visibility=('Visibility', dm.generalDMClass.first_not_null),
+                SurveyType=('SurveyType', dm.generalDMClass.first_not_null),
+                RegionalSurvey=('RegionalSurvey', 'any'),
+                RegionalCountCode=('RegionalCountCode', dm.generalDMClass.first_not_null)
+                )
+               .reset_index()
+               )
 
         # 2) Keep exactly one master row per group ---
         masters = (elephantEventsMerge[elephantEventsMerge['MasterEvent'].str.upper().eq('YES')]
@@ -1653,7 +1659,7 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
 
         # 3) Merge aggregated fields onto masters ---
         elephantEventsMerge2 = (masters
-                            .drop(columns=['Comments', 'Visibility'])  # will replace with agg values
+                            .drop(columns=['Comments', 'Visibility', 'SurveyType', 'RegionalSurvey', 'RegionalCountCode'])  # will replace with agg values
                             .merge(agg, on=grp_keys, how='left')
                             .sort_values(grp_keys))
 
@@ -1671,8 +1677,12 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
         tempTable = 'tmpTable_ETL'
 
         # Subset to Only the fields needing update:
-        cols_needed = ['EventID', 'Comments', 'Visibility']
+        cols_needed = ['EventID', 'Comments', 'Visibility', 'SurveyType', 'RegionalSurvey', 'RegionalCountCode']
         eventsDFToUpdateFinal = elephantEventsMerge2[cols_needed]
+
+
+        # Set Nan to None
+        eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
 
         # Create the update SQL Statement
         update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblElephantEvents",

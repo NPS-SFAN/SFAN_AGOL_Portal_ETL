@@ -975,8 +975,10 @@ class generalDMClass:
 
     # Take the first not null value in a dataframe field workflow
     def first_not_null(s: pd.Series):
-        # Treat empty strings as nulls too
-        s_clean = s.replace('', np.nan).dropna()
+        s_clean = (
+            s.replace(r'^\s*$', np.nan, regex=True)  # empty or whitespace → NaN
+            .dropna()
+        )
         return s_clean.iloc[0] if not s_clean.empty else np.nan
 
     if __name__ == "__name__":
