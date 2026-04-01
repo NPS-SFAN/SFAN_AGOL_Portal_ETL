@@ -21,14 +21,11 @@ As of 6/3/2025 - Salmonids Smolts ETL workflow developed - KRS
 Output:
 
 Python Environment: arcgispro-py3-entra2 - Python 3.11, clone of the ArcGISPro 3.3 environment in entra for ArcPY
-Note pywin 32 was imported from the Arcgis pro clone
+Note pywin 32 was imported into the Arcgis pro clone
 
 Date Developed - August 2024
 Development Status - Ongoing
 Created By - Kirk Sherrill - Data Scientist/Manager San Francisco Bay Area Network Inventory and Monitoring
-
-
-
 
 """
 
@@ -52,7 +49,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20260331wETL.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20260401wETL.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedFE_20251208.accdb'
 
 # Year Being Processed
