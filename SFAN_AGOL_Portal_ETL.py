@@ -89,6 +89,10 @@ AGOLDownload = 'No'  # ('Yes'|'No')
 # you push to the server.
 photoDir = f'{outDir}\\Photos'
 
+# Pinnipeds Elephant Seal - must define which season is being processed (e.g. Breeding Season, Molt, All). Note 'Molt'
+# will process both Molt and all other not Breeding Season.
+elephantSeason = 'Breeding' # 'Breeding|Molt|All'
+
 
 def main():
     logger = logging.getLogger(__name__)
@@ -113,7 +117,8 @@ def main():
 
         # Create the etlInstance instance
         etlInstance = etl.etlInstance(protocol=protocol, inDBBE=inDBBE, inDBFE=inDBFE, flID=layerID, yearLU=inYear,
-                                      inUser=inUser, outDir=outDir, AGOLDownload=AGOLDownload, photoDir=photoDir)
+                                      inUser=inUser, outDir=outDir, AGOLDownload=AGOLDownload, photoDir=photoDir,
+                                      elephantSeason = elephantSeason)
         # Print the name space of the instance
         print(etlInstance.__dict__)
 
