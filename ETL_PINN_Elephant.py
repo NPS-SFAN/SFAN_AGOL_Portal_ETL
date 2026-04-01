@@ -954,17 +954,10 @@ class etl_PINNElephant:
             outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance)
 
 
+            # Delete the Not Master Events - these have been migrated
+            outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
 
-            # Delete the Events with more then 1 - these have been migrated
-
-
-
-
-
-
-
-
-            logMsg = f'Success process_MultipleTabletEvents method'
+            logMsg = f'Success process_MultipleTabletEvents routine'
             logging.info(logMsg, exc_info=True)
 
             return "Success"
@@ -1530,6 +1523,58 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightE
         traceback.print_exc(file=sys.stdout)
         return "Fail"
 
+
+def deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance):
+    """
+    Delete the not Master Multiple/Split Events for the Event Tables. This is done post completion of the Migration to
+    master routines in the 'updateToMasterEventID' function.
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return string: - Denoting Success or Failed
+    should be de
+    """
+
+    try:
+
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(notMasterEventsFinal, tempTable, etlInstance.inDBBE)
+
+        # Event tables to be processed
+        tableList = ['tblEvents', 'tblElephantEvents', 'tblResightEvents']
+
+        for table in tableList:
+
+            # Define the Delete Query
+            update_sql = (f'DELETE {table}.* FROM {table} INNER JOIN tmpTable_ETL ON '
+                          f'{table}.EventID = tmpTable_ETL.EventID;')
+
+            # Apply the Delete Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+            logMsg = f'Successfully Deleted Not Master Events from - {table}'
+            print(logMsg)
+            logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - deleteNotMasterEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - deleteNotMasterEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+
 def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
 
     """
@@ -1703,7 +1748,7 @@ def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
             # Apply the Update Query to the Access DB using the passed temp table
             dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
 
-            logMsg = f'Successfully Updated EventID to the MasterEventID in - {table} - {recCount} - records updated.'
+            logMsg = f'Successfully Updated EventID to the MasterEventID in - {table}.'
             logging.info(logMsg)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
