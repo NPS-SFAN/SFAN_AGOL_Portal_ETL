@@ -11,6 +11,9 @@ from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
 import pandas as pd
 
+#from ETL import etlInstance
+
+
 class generalArcGIS:
 
     numArcGISInstances = 0
@@ -106,6 +109,8 @@ class generalArcGIS:
             flc_item = gis.content.get(item_id)
             flc = FeatureLayerCollection.fromitem(flc_item)
 
+            source = flc.tables
+
             # Find target layer
             target_layer = next(
                 (lyr for lyr in flc.layers if lyr.properties.name == layer_name),
@@ -168,6 +173,90 @@ class generalArcGIS:
             logMsg = f'WARNING ERROR  - ArcGIS_API.py - download_layer_attachments: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+
+    def download_attachments_from_flc(gis, item_id, out_folder, layer_name, where="1=1", is_table=False):
+        """
+        Download photo attachments from a layer OR table in a Feature Layer Collection.
+
+        Added too handle process of either Feature layer or Tables in a feature layer - 4/1/2026.
+
+        :param gis: Authenticated GIS object
+        :param item_id: Hosted feature layer collection item ID
+        :param out_folder: Output folder for photos
+        :param layer_name: Layer/Table name
+        :param where: SQL filter
+        :param is_table: True = search in tables, False = search in layers
+
+        :return: DataFrame of downloaded attachments
+
+        """
+        try:
+            import os
+            import pandas as pd
+            from arcgis.features import FeatureLayerCollection
+
+            if not os.path.exists(out_folder):
+                os.makedirs(out_folder)
+
+            flc_item = gis.content.get(item_id)
+            flc = FeatureLayerCollection.fromitem(flc_item)
+
+            # Select source (layers vs tables)
+            source = flc.tables if is_table else flc.layers
+
+            # Find target
+            target = next(
+                (obj for obj in source if obj.properties.name == layer_name),
+                None
+            )
+
+            if not target:
+                src_type = "table" if is_table else "layer"
+                raise ValueError(f"{src_type.capitalize()} '{layer_name}' not found.")
+
+            rows = []
+
+            # Query records
+            features = target.query(where=where, out_fields="*").features
+
+            for feature in features:
+                oid = feature.attributes[target.properties.objectIdField]
+
+                attachments = target.attachments.get_list(oid)
+
+                for att in attachments:
+                    att_id = att["id"]
+                    original_name = att["name"]
+                    parent_global_id = att.get("ParentGlobalID")  #This is the GlobalID in the tblResights table
+
+
+                    downloaded_path = target.attachments.download(
+                        oid=oid,
+                        attachment_id=att_id,
+                        save_path=out_folder
+                    )
+
+                    rows.append({
+                        'ID': att_id,
+                        'PhotoName': original_name,
+                        'ParentGlobalID': parent_global_id
+
+                    })
+
+                    print(f"Downloaded: {original_name} ParentGlobalID: {parent_global_id})")
+
+            # Build dataframe
+            out_df = pd.DataFrame(rows)
+
+            return out_df
+
+        except Exception as e:
+            import logging, traceback, sys
+            logMsg = f'WARNING ERROR - download_attachments_from_flc: {e}'
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
 
 def importFeatureLayer(outGIS, generalArcGIS, etlInstance, dmInstance):
     """
