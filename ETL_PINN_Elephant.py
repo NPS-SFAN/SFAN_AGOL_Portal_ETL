@@ -572,7 +572,7 @@ class etl_PINNElephant:
             outDFCountsStack1 = outDFCountswEventID.drop(['RedFurPhoca', 'SharkBitePhoca', 'ParentGlobalID',
                                                             'GlobalID', 'Other', 'DefineOther', 'SpecifyOther',
                                                           'StartDate', 'ProjectCode', 'Visibility', 'Season',
-                                                          'ParkCode', 'Comments'], axis=1)
+                                                          'ParkCode', 'Comments', 'EndTime'], axis=1)
 
             # Define fields identifying stack records
             id_vars = ['CreatedDate', 'EventID', 'ObservationTime', 'LocationID']
@@ -940,11 +940,18 @@ class etl_PINNElephant:
             outFun = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
                                                        etlInstance, dmInstance)
 
+
+            # Define the CrossWalk to the Master Event when Multiple/Split Events -
+            notMasterEventsFinal = defineXwalkToMaster(outUniqueEventsDF, dmInstance)
+
+
+            # Process the tblEventObservers Not Master - duplicates must be deleted prior to update to Master EventID
+            # in the updateToMasterEventID routine below.
+            outFun = removeEventObserersDuplicates(notMasterEventsFinal, etlInstance, dmInstance)
+
+
             # Update Downstream Tables with Multiple/Split Events to the Master Event - t
-            notMasterEventsFinal = updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance)
-
-
-            # Process the blEventObservers Not Master - duplicates must be deleted prior to update query
+            outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance)
 
 
 
@@ -1521,16 +1528,102 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightE
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        return "Fail"
 
-
-def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
+def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
 
     """
-    Update the downstream tables EventID to the Master Event EventID for the Multi/Split Event records.
+    For Events with Multiple/Split Events identify the duplicate observers and delete these to avoid duplicate index
+    key errors when the Multiple/Split Events are updated to the Master Event.
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
+    should be defined.
+    """
+
+    try:
+
+        # Import the tblEventObservers
+        # Import Event Table to define the EventID via the GlobalID
+        inQuery = f"SELECT tblEventObservers.* FROM tblEventObservers;"
+
+        # Import tblEventObservers
+        eventObserversDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+
+        # Get Observers by EventID in the Not Master Events
+        observersNotMasterDF = pd.merge(
+            outUniqueEventsDF,
+            eventObserversDF,
+            left_on='EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Get Observers by EventID in the Master Events
+        observersMasterDF = pd.merge(
+            outUniqueEventsDF,
+            eventObserversDF,
+            left_on='MasterEventID',
+            right_on='EventID',
+            how='inner')
+
+        observersMasterDF = observersMasterDF.drop(columns=['EventID_y'])
+        observersMasterDF = observersMasterDF.rename(columns={'EventID_x': 'EventID'})
+
+        # Join to identify the duplicate Observers - these will be deleted
+        duplicatesByEventIDNotMasterDF = pd.merge(
+            observersNotMasterDF,
+            observersMasterDF,
+            left_on=['EventID', 'ObserverID'],
+            right_on=['EventID', 'ObserverID'],
+            how='inner')
+
+
+        # Delete the duplicate observers
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(duplicatesByEventIDNotMasterDF, tempTable, etlInstance.inDBBE)
+
+        # Define the Delete Query
+        update_sql = (f'DELETE tblEventObservers.* FROM tblEventObservers INNER JOIN tmpTable_ETL ON'
+                      f' (tblEventObservers.ObserverID = tmpTable_ETL.ObserverID) AND'
+                      f' (tblEventObservers.EventID = tmpTable_ETL.EventID);')
+
+        # Apply the Delete Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        recCount = duplicatesByEventIDNotMasterDF.shape[0]
+
+        logMsg = (f"Deleted - {recCount} - Duplicate Observer Records (post Split Event Harmonization) from"
+                  f" 'tblEventObservers'")
+        print(logMsg)
+        logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - removeEventObserersDuplicates"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - removeEventObserersDuplicates: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+def defineXwalkToMaster(outUniqueEventsDF, dmInstance):
+
+    """
+    Create the Crosswalk to the Master Event EventID for the Multi/Split Event records.
 
 
     :param outUniqueEventsDF: Events Dataframe with the Multiple/Split Events
-    :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
     :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
@@ -1541,7 +1634,8 @@ def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
 
         # For table Xwalk to the Master EventID
         # Step 1: Create a helper column with master EventID only where MasterEvent == "Yes"
-        outUniqueEventsDF['MasterEventID'] = np.where(outUniqueEventsDF['MasterEvent'] == 'Yes', outUniqueEventsDF['EventID'], np.nan)
+        outUniqueEventsDF['MasterEventID'] = np.where(outUniqueEventsDF['MasterEvent'] == 'Yes',
+                                                      outUniqueEventsDF['EventID'], np.nan)
 
         # Step 2: Forward/backward fill within each group to propagate the master ID
         outUniqueEventsDF['MasterEventID'] = (
@@ -1557,7 +1651,35 @@ def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
         notMasterEventsFinal = notMasterEventsDF[cols_needed]
 
 
-        tableList = ['tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - defineXwalkToMaster"
+        logging.info(logMsg)
+
+        return notMasterEventsFinal
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - defineXwalkToMaster: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
+
+    """
+    Update the downstream tables EventID to the Master Event EventID for the Multi/Split Event records.
+
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return string: Denote Success for Failed
+    """
+
+    try:
+
+        tableList = ['tblEventObservers', 'tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
                     'tblSubSitesNotSurveyed']
 
         # Temporary Table Created for Updated Query Processing
@@ -1587,7 +1709,7 @@ def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
         logging.info(logMsg)
 
-        return notMasterEventsFinal
+        return "Success"
 
     except Exception as e:
 
@@ -1595,10 +1717,7 @@ def updateToMasterEventID(outUniqueEventsDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-
-
-
-
+        return "Failed"
 
 
 def consolidateTblEvents(outUniqueEventsDF, etlInstance, dmInstance):
