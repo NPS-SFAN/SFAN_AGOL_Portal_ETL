@@ -51,9 +51,16 @@ class etl_PINNElephant:
         try:
 
             ######
+            # Subset AGOL Dictionary/DataFrames to the elephantSeason defined.  Breeding Season if first then Molt
+            # Season.
+            #########
+
+            outFCDicSub = subsetToSeason(outDFDic, etlInstance, dmInstance)
+
+            ######
             # Process Survey Metadata Form - tblEvents
             ######
-            outFun = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
+            outFun = etl_PINNElephant.process_SurveyMetadata(outFCDicSub, etlInstance, dmInstance)
 
             outDFEvents = outFun[0]
             outDFElephantEvents = outFun[1]
@@ -61,17 +68,17 @@ class etl_PINNElephant:
             ######
             # Process Counts Form - tblSealCount and tblPhocaSealCount-(RedFur and Shark Bite)
             ######
-            outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFCounts = etl_PINNElephant.process_Counts(outFCDicSub, outDFEvents, etlInstance, dmInstance)
 
             ######
             # Process Resights Form - Create Resight Events and Resight Records
             ######
-            outDFResightEvents = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFResightEvents = etl_PINNElephant.process_Resights(outFCDicSub, outDFEvents, etlInstance, dmInstance)
 
             ######
             # Process Observations Form
             ######
-            outDFDisturbance = etl_PINNElephant.process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFDisturbance = etl_PINNElephant.process_Disturbance(outFCDicSub, outDFEvents, etlInstance, dmInstance)
 
             ######
             # Consolidate Events collected on multiple tablets
@@ -944,15 +951,12 @@ class etl_PINNElephant:
             # Define the CrossWalk to the Master Event when Multiple/Split Events -
             notMasterEventsFinal = defineXwalkToMaster(outUniqueEventsDF, dmInstance)
 
-
             # Process the tblEventObservers Not Master - duplicates must be deleted prior to update to Master EventID
             # in the updateToMasterEventID routine below.
             outFun = removeEventObserersDuplicates(notMasterEventsFinal, etlInstance, dmInstance)
 
-
             # Update Downstream Tables with Multiple/Split Events to the Master Event - t
             outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance)
-
 
             # Delete the Not Master Events - these have been migrated
             outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
@@ -2066,3 +2070,119 @@ def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstan
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+def subsetToSeason(outDFDic, etlInstance, dmInstance):
+    """
+    Subset the passed AGOL dataframe dictionaries to the defined elephanSeason.
+
+    :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outFCDicSub: Dictionary with all imported dataframes from the imported feature layer subset to the defined
+        elephantSeason.
+    """
+
+    try:
+
+        eSeasonLU = etlInstance.elephantSeason
+
+        # Filter to the Season
+        if "breeding" in eSeasonLU.lower():
+            filtered = "Yes"
+
+            # Read in the Survey Metadata Dataframe:
+            inDFSurvey = None
+            for key, df in outDFDic.items():
+                if 'ElephantSeal' in key:
+                    inDFSurvey = df
+                    break
+            # Apply the subset
+            inDFSurveySub = inDFSurvey[inDFSurvey['Season'].str.contains('breeding', case=False, na=False)]
+
+        elif "molt" in eSeasonLU.lower():
+            filtered = "Yes"
+
+            # Read in the Survey Metadata Dataframe:
+            inDFSurvey = None
+            for key, df in outDFDic.items():
+                if 'ElephantSeal' in key:
+                    inDFSurvey = df
+                    break
+            # Apply the subset
+            inDFSurveySub = inDFSurvey[~inDFSurvey['Season'].str.contains('breeding', case=False, na=False)]
+
+        else: #No Filter Applied
+            filtered = "No"
+
+            logMsg = f'No Filter/Subset applied to Feature Layer - elephantSeason - defined as: {eSeasonLU}.'
+            logging.info(logMsg)
+            print(logMsg)
+
+        if filtered == "No":  #Return copy of the original dataframe
+            outDFDicSub = {k: v.copy() for k, v in outDFDic.items()}
+
+        else:
+
+            # Read in Counts Repeat
+            inDFCounts = None
+            for key, df in outDFDic.items():
+                if 'countsrepeats' in key:
+                    inDFCounts = df
+                    break
+            # Resights
+            inDFResights = None
+            for key, df in outDFDic.items():
+                if 'resightsrepeats' in key:
+                    inDFResights = df
+                    break
+
+            # Disturbance
+            inDFDisturbance = None
+            for key, df in outDFDic.items():
+                if 'disturbancerepeat' in key:
+                    inDFDisturbance = df
+                    break
+
+            # Subset Counts, Resights, and Disturbance to the 'inDFSurveySub' dataframe subset
+            inDFCountsSub = subset_by_survey(inDFCounts, inDFSurveySub, join_field='ParentGlobalID')
+            inDFResightsSub = subset_by_survey(inDFResights, inDFSurveySub, join_field='ParentGlobalID')
+            inDFDisturbanceSub = subset_by_survey(inDFDisturbance, inDFSurveySub, join_field='ParentGlobalID')
+
+            # Combine all four dataframes into a dictionary (ie. outFCDicSub) one key per dataframe
+            outFCDicSub = {
+                'ElephantSealSub': inDFSurveySub,
+                'countsrepeatsSub': inDFCountsSub,
+                'resightsrepeatsSub': inDFResightsSub,
+                'disturbancerepeatSub': inDFDisturbanceSub
+            }
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - subsetToSeason"
+        logging.info(logMsg)
+
+        return outFCDicSub
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - subsetToSeason: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+def subset_by_survey(df_to_filter, survey_df, join_field='ParentGlobalID'):
+    """
+    Keeps only rows in df_to_filter where join_field matches 'GlobalID' in survey_df
+    """
+    filterDF = pd.merge(
+        df_to_filter,
+        survey_df[['GlobalID']],  # Only need GlobalID from survey
+        left_on=join_field,
+        right_on='GlobalID',
+        how='inner'
+    )  # Drop duplicate join field
+
+    # Drop GlobalID_y and renamie GlobalID_x
+    dfFinal = filterDF.drop(columns=['GlobalID_y']).rename(columns={'GlobalID_x': 'GlobalID'})
+
+    return dfFinal
