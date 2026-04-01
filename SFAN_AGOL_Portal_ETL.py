@@ -87,7 +87,7 @@ AGOLDownload = 'No'  # ('Yes'|'No')
 # Directory where exported photos (if applicable) from survey 123 will be exported (SFAN Azure, Local Directory, etc.)
 # Recommend downloading photos locally then posting to the server afterwards due to slow transfer during processing if
 # you push to the server.
-photoDir = f'{outDir}\\Photos'
+photoDir = f'C:\\SFAN\\ETL\\Pinnipeds\\2026\\photos'
 
 # Pinnipeds Elephant Seal - must define which season is being processed (e.g. Breeding Season, Molt, All). Note 'Molt'
 # will process both Molt and all other not Breeding Season.
