@@ -18,7 +18,7 @@ class etlInstance:
     # Class Variables
     numETLInstances = 0
 
-    def __init__(self, protocol, inDBBE, inDBFE, flID, yearLU, inUser, outDir, AGOLDownload, photoDir):
+    def __init__(self, protocol, inDBBE, inDBFE, flID, yearLU, inUser, outDir, AGOLDownload, photoDir, elephantSeason):
         """
         Define the instantiated etlInstance attributes
         
@@ -30,11 +30,11 @@ class etlInstance:
         :param inUser: NPS UserNam
         :param outDir: Output directory
         :param AGOLDownload: Define if the AGOL/Portal Feature Layers need to be download, used in when developing code.
-        :param photoDir: Directory where exported photos from survey 123 will be export (e.g. SFAN Server, Local Directory
+        :param photoDir: Directory where exported photos from survey 123 will be export (SFAN Server, Local Directory
+        :param elephantSeason: Defines which Elephant Season is being processed.
 
         :return: instantiated self object
         """
-
         self.protocol = protocol
         self.inDBBE = inDBBE
         self.inDBFE = inDBFE
@@ -44,6 +44,7 @@ class etlInstance:
         self.outDir = outDir
         self.AGOLDownload = AGOLDownload
         self.photoDir = photoDir
+        self.elephantSeason = elephantSeason
 
         # Update the Class Variable
         etlInstance.numETLInstances += 1
