@@ -14,6 +14,7 @@ import os, sys
 import traceback
 import generalDM as dm
 import logging
+import ArcGIS_API as agl
 
 
 class etl_PINNElephant:
@@ -35,7 +36,7 @@ class etl_PINNElephant:
         # Define Instance Variables
         numETL_PINNElephant += 1
 
-    def process_PINNElephant(outDFDic, etlInstance, dmInstance):
+    def process_PINNElephant(outDFDic, etlInstance, dmInstance, generalArcGIS):
 
         """
         Import files in passed folder to dataframe(s). Uses GLOB to get all files in the directory.
@@ -43,7 +44,8 @@ class etl_PINNElephant:
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance:
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: ArcGIS instance
 
         :return:outETL: String denoting 'Success' or 'Error' on ETL Processing
         """
@@ -73,7 +75,10 @@ class etl_PINNElephant:
             ######
             # Process Resights Form - Create Resight Events and Resight Records
             ######
-            outDFResightEvents = etl_PINNElephant.process_Resights(outFCDicSub, outDFEvents, etlInstance, dmInstance)
+            outFun = etl_PINNElephant.process_Resights(outFCDicSub, outDFEvents, etlInstance, dmInstance)
+
+            outDFResightEvents = outFun[0]
+            outDFResightRec = outFun[1]
 
             ######
             # Process Observations Form
@@ -84,9 +89,15 @@ class etl_PINNElephant:
             # Consolidate Events collected on multiple tablets
             ######
             outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
-                                                                                    outDFResightEvents,
-                                                                                    etlInstance,
+                                                                                    outDFResightEvents, etlInstance,
                                                                                     dmInstance)
+
+            ########
+            # Process the Images in the Resight Form - requires direct hit of the ArcGIS API
+            ########
+            outFun = etl_PINNElephant.process_ResightPhotos(outDFEvents, outDFResightRec, etlInstance,
+                                                            dmInstance, generalArcGIS)
+
 
 
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
@@ -729,7 +740,8 @@ class etl_PINNElephant:
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:outDFResightEvents: Dataframe append to Resight Events.
+        :return:outDFResightEvents - Dataframe appended to Resight Events and outDFResightRec - Dataframe appended to
+             tblResights.
         """
 
         try:
@@ -743,7 +755,7 @@ class etl_PINNElephant:
             outDFSubset = inDF[["Sub Site", "Maturity", "Sex", "ConditionCode", "Dye Number", "Dye Code", "Left Color",
                                 "Left Tag #", "Left Position", "Left Tag Code", "Right Color", "Right Tag #",
                                 "Right Position", "Right Tag Code", "Bull/Cow Status", "Pup Size", "Comments",
-                                "photonameleft_name", "photonameright_name", "CreationDate", "ParentGlobalID"]].rename(
+                                "photonameleft_name", "photonameright_name", "CreationDate", "ParentGlobalID", 'GlobalID']].rename(
                 columns={"Sub Site": "LocationID",
                          "Maturity": "MatureCode",
                          "Dye Number": "Dye",
@@ -772,12 +784,12 @@ class etl_PINNElephant:
                                       "LtagColor", "LtagNo", "LtagPosn",
                                       "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
                                       "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
-                                      "Comments", "CreatedDate", "ParentGlobalID"],
+                                      "Comments", "CreatedDate", "ParentGlobalID", "GlobalID"],
                 'Type': ["int64", "object", "object", "object", "object", "object", "object", "object", "object", "int64",
                           "object", "object", "object", "int64", "object", "object",
-                          "object", "object", "object", "object", "object"],
+                          "object", "object", "object", "object", "object", "object"],
                 'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na",
-                          "na", "na", "na", "na", "na", "na", "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na"]}
+                          "na", "na", "na", "na", "na", "na", "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na", "na"]}
 
             outDFResights = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -786,7 +798,10 @@ class etl_PINNElephant:
 
             # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
             outDFResightswEventID = pd.merge(outDFResights, outDFEvents_Resight[['GlobalID', 'EventID']], how='left',
-                                             left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
+                                             left_on="ParentGlobalID", right_on="GlobalID")
+
+            outDFResightswEventID = outDFResightswEventID.drop(columns=['GlobalID_y']).rename(columns={'GlobalID_x': 'GlobalID'})
+
 
             ############
             # Create the Resight  Event Table Records - this will be an import of the 'outDFEvents_Resight'
@@ -803,7 +818,7 @@ class etl_PINNElephant:
             logMsg = f'Success process_Resights ETL Routine'
             logging.info(logMsg, exc_info=True)
 
-            return outDFResightEvents
+            return outDFResightEvents, outDFResightRec
 
         except Exception as e:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Resights: {e}'
@@ -974,6 +989,122 @@ class etl_PINNElephant:
             logging.critical(logMsg, exc_info=True)
 
             traceback.print_exc(file=sys.stdout)
+
+
+    def process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS):
+
+        """
+        Process the Nest Photos in the Nest Repeat. Workflow also pushes photo informatio to the tbl_Nest_Photos table.
+
+        Photos are exported to the directory etlInstanace.photDir location - subsequently push mannual to the
+        PORE/Azure server (e.g. \\INPPORE07\Resources\Science\ESeal\Eseal2026\Images\TagResight).
+
+        The path in the tblResightPhotos will default be defined as:
+        \\INPPORE07\Resources\Science\ESeal\Eseal{Year}\Images\TagResight
+
+        :param outDFEvents - Imported Dataframe event
+        :param outDFResightRec - Resight Photos Dataframe
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: General ArcGIS instance
+
+        :return:String - denoting success for failure.
+        """
+
+        try:
+
+            # Resight Records that where appended - use to get the ResightID in tblResights
+            outDFSubset = outDFResightRec[['GlobalID']]
+
+            # Import the Resight Table
+            inQuery = (f"SELECT tblResightEvents.Season, tblResights.ResightID, tblResights.GlobalID FROM tblResights INNER JOIN"
+                       f" tblResightEvents ON tblResights.EventID = tblResightEvents.EventID;")
+
+            # Import Resights
+            resightsDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # This will get the Resight Records processed with the ResightID
+            resightDF2 = pd.merge(
+                outDFSubset,
+                resightsDF,
+                left_on = 'GlobalID',  # column in dfObserversOther
+                right_on = 'GlobalID',  # column in outDFContactsLU
+                how = 'inner')
+
+            # Convert all nan to None
+            resightDF2None = resightDF2.where(pd.notna(resightDF2), None)
+
+            # Subset to only the fields needed
+            resightDF2None = resightDF2None[['GlobalID', 'ResightID', 'Season']]
+
+            ##############################################
+            # Process Records - Photos import via API REST
+            ##############################################
+
+            # Connect to AGOL - via 'oauth'
+            if generalArcGIS.credentials.lower() == 'oauth':
+                outGIS = agl.connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            # Connect via ArcGISPro Environment
+            else:
+                outGIS = agl.connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+
+            # Process the Photos in the Resight Repeat Table
+            outPhotosDF =  agl.generalArcGIS.download_attachments_from_flc(outGIS, etlInstance.flID,
+                                                                           etlInstance.photoDir, 'resightsrepeats',
+                                                                           where="1=1", is_table=True)
+
+            # Temp Delete Post Successfully Processing
+            outFullName = f'{etlInstance.outDir}\\outPhotosDF_backup.csv'
+            outPhotosDF.to_csv(outFullName, index=True)
+
+            # Create records in the 'tblResightPhotos' directory
+            outPhotosDFwAtt = pd.merge(resightDF2None, outPhotosDF[['ParentGlobalID', 'ID', 'PhotoName']],
+                                       how='inner', left_on="GlobalID", right_on="ParentGlobalID",
+                                       suffixes=("_src", "_lk"))
+
+
+            # Define the 'Server' Location field - defaulting to the SNPL SFAN Azure location by year
+            dynamicDir = f'ESeal{etlInstance.yearLU}'
+            serverLoc = fr'\\INPPORE07\Resources\Science\ESeal\{dynamicDir}\Images\TagResight'
+            outPhotosDFwAtt['ServerLocation'] = serverLoc
+
+            # Fields to drop
+            fieldListDrop = ['ParentGlobalID', 'ID', 'GlobalID']
+            outPhotosDFwAtt.drop(fieldListDrop, axis=1, inplace=True)
+
+            # Append the records that had photo attachments
+            # Grab all column names from the dataframe
+            cols = outPhotosDFwAtt.columns.tolist()
+
+            recCount = outPhotosDFwAtt.shape[0]
+
+            # Append to table
+            # Build the SQL query dynamically
+            insertQuery = (
+               f"INSERT INTO tblResightPhotos ({', '.join(cols)}) "
+               f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outPhotosDFwAtt, "tblResightPhotos", insertQuery,
+                                           dmInstance)
+
+            logMsg = f"Success process_ResightPhotos - appended - {recCount} - records to the tblResightPhotos table."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return outDFSubset
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py.py - process_ResightPhotos: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+
+
+
+
 
 
 def processRedFurShark(inDF, etlInstance, dmInstance):
@@ -1285,6 +1416,11 @@ def processResightRecords(inDF, etlInstance, dmInstance):
     :param dmInstance: Data Management instance
 
     :return outDFResightRec: Data Frame with the append records
+
+    Updates:
+
+    4/1/2026 - Removed PhotoNames Left and Right from Processing, added GlobalID, photo names will be pushed to the new
+    tblResightPhotos table.
     """
 
     try:
@@ -1293,8 +1429,7 @@ def processResightRecords(inDF, etlInstance, dmInstance):
         inDFResightRec = inDF[["EventID", "LocationID", "MatureCode", "ConditionCode", "Sex", "Dye", "DyeCode",
                                "LtagColor", "LtagNo", "LtagPosn",
                                "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
-                               "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
-                               "Comments", "CreatedDate"]]
+                               "ReproductiveStatusCode", "PupSize", "Comments", "CreatedDate", "GlobalID"]]
 
         # Update any 'nan' string or np.nan values to None to consistently handle null values.
         inDFResightRec2 = inDFResightRec.replace([np.nan, 'nan'], None)
@@ -1316,8 +1451,10 @@ def processResightRecords(inDF, etlInstance, dmInstance):
             f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
             f'LtagColor,'
             f' LtagNo, LtagPosn, LtagCode, RtagColor, RtagNo, RtagPosn, RtagCode, ReproductiveStatusCode, '
-            f' PupSize, PhotoNameLeft, PhotoNameRight, Comments, CreatedDate)'
-            f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            f' PupSize, Comments, CreatedDate, GlobalID)'
+            f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, inDFResightRec2, "tblResights", insertQuery, dmInstance)
