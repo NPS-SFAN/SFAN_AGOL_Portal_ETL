@@ -87,7 +87,8 @@ class etlInstance:
             # ETL Routine Pinnipeds Elephant Seal
             elif etlInstance.protocol.lower() == 'pinn-elephant':
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
-                outETL = PElephant.etl_PINNElephant.process_PINNElephant(outDFDic, etlInstance, dmInstance)
+                outETL = PElephant.etl_PINNElephant.process_PINNElephant(outDFDic, etlInstance, dmInstance,
+                                                                         generalArcGIS)
 
             # PCM Plot Locations Manual
             elif etlInstance.protocol.lower() == 'pcm-locationsmanual':
