@@ -95,10 +95,7 @@ class etl_PINNElephant:
             ########
             # Process the Images in the Resight Form - requires direct hit of the ArcGIS API
             ########
-            outFun = etl_PINNElephant.process_ResightPhotos(outDFEvents, outDFResightRec, etlInstance,
-                                                            dmInstance, generalArcGIS)
-
-
+            outFun = etl_PINNElephant.process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS)
 
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -994,15 +991,16 @@ class etl_PINNElephant:
     def process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS):
 
         """
-        Process the Nest Photos in the Nest Repeat. Workflow also pushes photo informatio to the tbl_Nest_Photos table.
+        Process the Resight Photos in the resightsrepeat table of the Elephant Seals Feature Layer.
+        Workflow also pushes photo information to the tblResightPhotos table.
 
-        Photos are exported to the directory etlInstanace.photDir location - subsequently push mannual to the
-        PORE/Azure server (e.g. \\INPPORE07\Resources\Science\ESeal\Eseal2026\Images\TagResight).
+        Photos are exported to the directory etlInstanace.photDir location (recommend a local location). Post processing
+        subsequently pushed mannually to the desired location on the PORE/Azure server:
+        e.g. \\INPPORE07\Resources\Science\ESeal\Eseal2026\Images\TagResight.
 
-        The path in the tblResightPhotos will default be defined as:
+        The 'ServerLocation' field in the tblResightPhotos will by default be defined as:
         \\INPPORE07\Resources\Science\ESeal\Eseal{Year}\Images\TagResight
 
-        :param outDFEvents - Imported Dataframe event
         :param outDFResightRec - Resight Photos Dataframe
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance
@@ -1013,7 +1011,7 @@ class etl_PINNElephant:
 
         try:
 
-            # Resight Records that where appended - use to get the ResightID in tblResights
+            # Resight Records that where appended - use to get the GlobalID
             outDFSubset = outDFResightRec[['GlobalID']]
 
             # Import the Resight Table
@@ -2053,10 +2051,17 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
                             .sort_values(grp_keys))
 
         #4) Add the DeviceListCompiled to the Comments list field
-        elephantEventsMerge2['Comments'] = (elephantEventsMerge2[
-            ['Comments', 'DeviceListCompiled']].
-                                        apply(lambda x: '|Devices: '.join([str(v) for v in x if pd.notna(v)
-                                                                  and str(v) != '']), axis=1))
+        elephantEventsMerge2['Comments'] = elephantEventsMerge2.apply(
+            lambda x: (
+                f"{x['Comments']}|Devices: {x['DeviceListCompiled']}"
+                if pd.notna(x['Comments']) and str(x['Comments']) != '' and pd.notna(x['DeviceListCompiled']) and str(
+                    x['DeviceListCompiled']) != ''
+                else f"Devices: {x['DeviceListCompiled']}"
+                if pd.notna(x['DeviceListCompiled']) and str(x['DeviceListCompiled']) != ''
+                else x['Comments']
+            ),
+            axis=1
+        )
 
         #  Drop the 'DeviceListCompiledField
         elephantEventsMerge2 = elephantEventsMerge2.drop(columns=['DeviceListCompiled'])
