@@ -1013,25 +1013,6 @@ class generalDMClass:
 
         return sql.strip()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     # Concatenate Field to string
     def concat_comments(s: pd.Series) -> str:
         s = s.dropna().astype(str).str.strip()
