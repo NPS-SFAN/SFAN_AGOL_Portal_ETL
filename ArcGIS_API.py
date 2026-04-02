@@ -179,7 +179,7 @@ class generalArcGIS:
         """
         Download photo attachments from a layer OR table in a Feature Layer Collection.
 
-        Added too handle process of either Feature layer or Tables in a feature layer - 4/1/2026.
+        Added to handle processing of either Feature layer or Tables in a feature layer for Elephant Seal - 4/1/2026.
 
         :param gis: Authenticated GIS object
         :param item_id: Hosted feature layer collection item ID
@@ -228,9 +228,10 @@ class generalArcGIS:
                 for att in attachments:
                     att_id = att["id"]
                     original_name = att["name"]
-                    parent_global_id = att.get("ParentGlobalID")  #This is the GlobalID in the tblResights table
+                    parent_global_id = att.get("parentGlobalId")  #This is the GlobalID in the tblResights/Resight Repeat
+                    # table (not the ParentGlobalID in the Resights Repeats
 
-
+                    # Download attachment
                     downloaded_path = target.attachments.download(
                         oid=oid,
                         attachment_id=att_id,
