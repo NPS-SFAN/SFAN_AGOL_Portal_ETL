@@ -14,6 +14,7 @@ import os, sys
 import traceback
 import generalDM as dm
 import logging
+import ArcGIS_API as agl
 
 
 class etl_PINNElephant:
@@ -35,7 +36,7 @@ class etl_PINNElephant:
         # Define Instance Variables
         numETL_PINNElephant += 1
 
-    def process_PINNElephant(outDFDic, etlInstance, dmInstance):
+    def process_PINNElephant(outDFDic, etlInstance, dmInstance, generalArcGIS):
 
         """
         Import files in passed folder to dataframe(s). Uses GLOB to get all files in the directory.
@@ -43,7 +44,8 @@ class etl_PINNElephant:
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance:
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: ArcGIS instance
 
         :return:outETL: String denoting 'Success' or 'Error' on ETL Processing
         """
@@ -51,24 +53,49 @@ class etl_PINNElephant:
         try:
 
             ######
+            # Subset AGOL Dictionary/DataFrames to the elephantSeason defined.  Breeding Season if first then Molt
+            # Season.
+            #########
+
+            outFCDicSub = subsetToSeason(outDFDic, etlInstance, dmInstance)
+
+            ######
             # Process Survey Metadata Form - tblEvents
             ######
-            outDFEvents = etl_PINNElephant.process_SurveyMetadata(outDFDic, etlInstance, dmInstance)
+            outFun = etl_PINNElephant.process_SurveyMetadata(outFCDicSub, etlInstance, dmInstance)
+
+            outDFEvents = outFun[0]
+            outDFElephantEvents = outFun[1]
 
             ######
             # Process Counts Form - tblSealCount and tblPhocaSealCount-(RedFur and Shark Bite)
             ######
-            outDFCounts = etl_PINNElephant.process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFCounts = etl_PINNElephant.process_Counts(outFCDicSub, outDFEvents, etlInstance, dmInstance)
 
             ######
             # Process Resights Form - Create Resight Events and Resight Records
             ######
-            outDFResights = etl_PINNElephant.process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outFun = etl_PINNElephant.process_Resights(outFCDicSub, outDFEvents, etlInstance, dmInstance)
+
+            outDFResightEvents = outFun[0]
+            outDFResightRec = outFun[1]
 
             ######
             # Process Observations Form
             ######
-            outDFDisturbance = etl_PINNElephant.process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance)
+            outDFDisturbance = etl_PINNElephant.process_Disturbance(outFCDicSub, outDFEvents, etlInstance, dmInstance)
+
+            ######
+            # Consolidate Events collected on multiple tablets
+            ######
+            outDFEventsConsolidated = etl_PINNElephant.process_MultipleTabletEvents(outDFEvents, outDFElephantEvents,
+                                                                                    outDFResightEvents, etlInstance,
+                                                                                    dmInstance)
+
+            ########
+            # Process the Images in the Resight Form - requires direct hit of the ArcGIS API
+            ########
+            outFun = etl_PINNElephant.process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS)
 
             logMsg = f"Success ETL_PINN_Elephant.py - process_PINNElephant."
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
@@ -432,14 +459,14 @@ class etl_PINNElephant:
             # Use existing outDFEvent dataframe and the already imported outDFEventsLU
 
             # Define the EventID and Visibility fields via join on the ParentGlobalID - GlobalID join
-            outDFEventwGlIDwEventID = pd.merge(outDFSurvey[["GlobalID", "StartDate", "StartTime"]],
+            outDFEventwGlIDwEventID = pd.merge(outDFSurvey[["GlobalID", "StartDate", "StartTime", "EndTime"]],
                                                outDFEventsLU[["GlobalID", "ProjectCode", "EventID"]],
                                                how='outer', left_on="GlobalID",
                                                right_on="GlobalID")
 
             # Last Join to get the Visibility Field - Needed for Elephant and Resight Event Table - Added 8/18/2025
             outDFEventwGlIDwEventIDwVis = pd.merge(outDFEventwGlIDwEventID[["GlobalID", "StartDate", "StartTime",
-                                                                            "EventID", "ProjectCode"]],
+                                                                            "EndTime", "EventID", "ProjectCode"]],
                                                inDF[["GlobalID", "Visibility", "Season", "Park Code", "Event Comment"]],
                                                left_on="GlobalID",
                                                right_on="GlobalID",
@@ -452,8 +479,8 @@ class etl_PINNElephant:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            # Returning the Dataframe with the Survey and Event information pushed
-            return outDFEventwGlIDwEventIDFinal
+            # Returning the Dataframe with the Survey and Event information and the Elephant Seal Event Dataframe
+            return outDFEventwGlIDwEventIDFinal, dfElephantEvents_append3
 
         except Exception as e:
 
@@ -560,7 +587,7 @@ class etl_PINNElephant:
             outDFCountsStack1 = outDFCountswEventID.drop(['RedFurPhoca', 'SharkBitePhoca', 'ParentGlobalID',
                                                             'GlobalID', 'Other', 'DefineOther', 'SpecifyOther',
                                                           'StartDate', 'ProjectCode', 'Visibility', 'Season',
-                                                          'ParkCode', 'Comments'], axis=1)
+                                                          'ParkCode', 'Comments', 'EndTime'], axis=1)
 
             # Define fields identifying stack records
             id_vars = ['CreatedDate', 'EventID', 'ObservationTime', 'LocationID']
@@ -635,6 +662,20 @@ class etl_PINNElephant:
             # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
             combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, combinedOtherDF], ignore_index=True)
 
+
+            #######
+            # New workflow March 2026 to handle newly added 'DeadPup' field not in the 2025 workflow
+            #######
+
+            # Add 'Qualifier' and 'QCFlag' fields
+            combinedAllCountsDF[['Qualifier', 'QCFlag']] = pd.NA
+
+            # Define 'Qualifier' and 'QCFlag' fields to 'DEAD' where 'DEPUP'
+            combinedAllCountsDF.loc[combinedAllCountsDF['MatureCode'] == 'DEPUP', ['Qualifier', 'QCFlag']] = 'DEAD'
+
+            # Change DEPUP MatureCode values to EPUP
+            combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].replace('DEPUP', 'EPUP')
+
             # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
             duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
 
@@ -649,14 +690,14 @@ class etl_PINNElephant:
                 duplicates_all.to_csv(outPath, index=True)
 
                 msgLog = f'Duplicate Records in the Counts Data Frame to be appended see export - {outPath}'
-                logging.critical(logMsg, exc_info=True)
+                logging.critical(msgLog, exc_info=True)
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             combinedAllCountsDF = combinedAllCountsDF.replace([np.nan, 'nan'], None)
 
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
-                           f'MatureCode, Enumeration, QCNotes) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                           f'MatureCode, Enumeration, QCNotes, Qualifier, QCFlag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, combinedAllCountsDF, "tblSealCount", insertQuery, dmInstance)
@@ -696,7 +737,8 @@ class etl_PINNElephant:
         :param etlInstance: ETL processing instance
         :param dmInstance: Data Management instance:
 
-        :return:outDFCounts: Dataframe of the exported Count table records will be used in subsequent ETL Routines.
+        :return:outDFResightEvents - Dataframe appended to Resight Events and outDFResightRec - Dataframe appended to
+             tblResights.
         """
 
         try:
@@ -710,7 +752,7 @@ class etl_PINNElephant:
             outDFSubset = inDF[["Sub Site", "Maturity", "Sex", "ConditionCode", "Dye Number", "Dye Code", "Left Color",
                                 "Left Tag #", "Left Position", "Left Tag Code", "Right Color", "Right Tag #",
                                 "Right Position", "Right Tag Code", "Bull/Cow Status", "Pup Size", "Comments",
-                                "photonameleft_name", "photonameright_name", "CreationDate", "ParentGlobalID"]].rename(
+                                "photonameleft_name", "photonameright_name", "CreationDate", "ParentGlobalID", 'GlobalID']].rename(
                 columns={"Sub Site": "LocationID",
                          "Maturity": "MatureCode",
                          "Dye Number": "Dye",
@@ -739,12 +781,12 @@ class etl_PINNElephant:
                                       "LtagColor", "LtagNo", "LtagPosn",
                                       "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
                                       "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
-                                      "Comments", "CreatedDate", "ParentGlobalID"],
+                                      "Comments", "CreatedDate", "ParentGlobalID", "GlobalID"],
                 'Type': ["int64", "object", "object", "object", "object", "object", "object", "object", "object", "int64",
                           "object", "object", "object", "int64", "object", "object",
-                          "object", "object", "object", "object", "object"],
+                          "object", "object", "object", "object", "object", "object"],
                 'DateTimeFormat': ["na", "na", "na", "na", "na", "na", "na", "na", "na", "na",
-                          "na", "na", "na", "na", "na", "na", "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na"]}
+                          "na", "na", "na", "na", "na", "na", "na", "na", "na", "%m/%d/%Y %I:%M:%S %p", "na", "na"]}
 
             outDFResights = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -753,10 +795,13 @@ class etl_PINNElephant:
 
             # Merge on the Event Data Frame to get the EventID via the ParentGlobalID - GlobalID fields
             outDFResightswEventID = pd.merge(outDFResights, outDFEvents_Resight[['GlobalID', 'EventID']], how='left',
-                                             left_on="ParentGlobalID", right_on="GlobalID", suffixes=("_src", "_lk"))
+                                             left_on="ParentGlobalID", right_on="GlobalID")
+
+            outDFResightswEventID = outDFResightswEventID.drop(columns=['GlobalID_y']).rename(columns={'GlobalID_x': 'GlobalID'})
+
 
             ############
-            # Create the Resight  EVent Table Records - this will be an import of the 'outDFEvents'
+            # Create the Resight  Event Table Records - this will be an import of the 'outDFEvents_Resight'
             ############
 
             outDFResightEvents = processResightEvents(outDFEvents_Resight, etlInstance, dmInstance)
@@ -770,7 +815,7 @@ class etl_PINNElephant:
             logMsg = f'Success process_Resights ETL Routine'
             logging.info(logMsg, exc_info=True)
 
-            return outDFResightRec
+            return outDFResightEvents, outDFResightRec
 
         except Exception as e:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Resights: {e}'
@@ -881,6 +926,183 @@ class etl_PINNElephant:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Disturbance: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+
+    def process_MultipleTabletEvents(outDFEvents, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
+        """
+        ETL routine for Events that where collected on multiple events/tablets.  Using multiple tablets is common
+        data collection practice for Elephant seal monitoring.
+
+        After initial processing of all events this workflow  identifies when multiple events/tablets on the same
+        day and retains one event and migrated all other associated events to the select event.
+
+        Workflow consolidates all information across all related events (e.g. Min and Max Start Times, all observers,
+        etc.,) and updates related monitoring components/tables to the master event.  After successful migration of
+        all events to the master event these migrated events (i.e. second event other tablet)
+        are deleted in the event table.
+
+        :param outDFEvents - Event Data Frame from the SurveyMetadata, with GlobalID and EventID definition
+        :param outDFElephantEvents - Elephant Seal Events
+        :param outDFResightEvents - Resight Events
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return:String denoting Success or Failed
+        """
+
+        try:
+
+            # Identify where multiple events and define the master events when multiple
+            outUniqueEventsDF = uniqueEvents(outDFEvents, etlInstance, dmInstance)
+
+
+            # Consolidate the Events with Multiple/Split Events - will push an Update back to the Events Table
+            outFun = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
+                                                       etlInstance, dmInstance)
+
+
+            # Define the CrossWalk to the Master Event when Multiple/Split Events -
+            notMasterEventsFinal = defineXwalkToMaster(outUniqueEventsDF, dmInstance)
+
+            # Process the tblEventObservers Not Master - duplicates must be deleted prior to update to Master EventID
+            # in the updateToMasterEventID routine below.
+            outFun = removeEventObserersDuplicates(notMasterEventsFinal, etlInstance, dmInstance)
+
+            # Update Downstream Tables with Multiple/Split Events to the Master Event - t
+            outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance)
+
+            # Delete the Not Master Events - these have been migrated
+            outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
+
+            logMsg = f'Success process_MultipleTabletEvents routine'
+            logging.info(logMsg, exc_info=True)
+
+            return "Success"
+
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_MultipleTabletEvents: {e}'
+
+            logging.critical(logMsg, exc_info=True)
+
+            traceback.print_exc(file=sys.stdout)
+
+
+    def process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS):
+
+        """
+        Process the Resight Photos in the resightsrepeat table of the Elephant Seals Feature Layer.
+        Workflow also pushes photo information to the tblResightPhotos table.
+
+        Photos are exported to the directory etlInstanace.photDir location (recommend a local location). Post processing
+        subsequently pushed mannually to the desired location on the PORE/Azure server:
+        e.g. \\INPPORE07\Resources\Science\ESeal\Eseal2026\Images\TagResight.
+
+        The 'ServerLocation' field in the tblResightPhotos will by default be defined as:
+        \\INPPORE07\Resources\Science\ESeal\Eseal{Year}\Images\TagResight
+
+        :param outDFResightRec - Resight Photos Dataframe
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param generalArcGIS: General ArcGIS instance
+
+        :return:String - denoting success for failure.
+        """
+
+        try:
+
+            # Resight Records that where appended - use to get the GlobalID
+            outDFSubset = outDFResightRec[['GlobalID']]
+
+            # Import the Resight Table
+            inQuery = (f"SELECT tblResightEvents.Season, tblResights.ResightID, tblResights.GlobalID FROM tblResights INNER JOIN"
+                       f" tblResightEvents ON tblResights.EventID = tblResightEvents.EventID;")
+
+            # Import Resights
+            resightsDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # This will get the Resight Records processed with the ResightID
+            resightDF2 = pd.merge(
+                outDFSubset,
+                resightsDF,
+                left_on = 'GlobalID',  # column in dfObserversOther
+                right_on = 'GlobalID',  # column in outDFContactsLU
+                how = 'inner')
+
+            # Convert all nan to None
+            resightDF2None = resightDF2.where(pd.notna(resightDF2), None)
+
+            # Subset to only the fields needed
+            resightDF2None = resightDF2None[['GlobalID', 'ResightID', 'Season']]
+
+            ##############################################
+            # Process Records - Photos import via API REST
+            ##############################################
+
+            # Connect to AGOL - via 'oauth'
+            if generalArcGIS.credentials.lower() == 'oauth':
+                outGIS = agl.connectAGOL_clientID(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+            # Connect via ArcGISPro Environment
+            else:
+                outGIS = agl.connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
+
+            # Process the Photos in the Resight Repeat Table
+            outPhotosDF =  agl.generalArcGIS.download_attachments_from_flc(outGIS, etlInstance.flID,
+                                                                           etlInstance.photoDir, 'resightsrepeats',
+                                                                           where="1=1", is_table=True)
+
+            # Temp Delete Post Successfully Processing
+            outFullName = f'{etlInstance.outDir}\\outPhotosDF_backup.csv'
+            outPhotosDF.to_csv(outFullName, index=True)
+
+            # Create records in the 'tblResightPhotos' directory
+            outPhotosDFwAtt = pd.merge(resightDF2None, outPhotosDF[['ParentGlobalID', 'ID', 'PhotoName']],
+                                       how='inner', left_on="GlobalID", right_on="ParentGlobalID",
+                                       suffixes=("_src", "_lk"))
+
+
+            # Define the 'Server' Location field - defaulting to the SNPL SFAN Azure location by year
+            dynamicDir = f'ESeal{etlInstance.yearLU}'
+            serverLoc = fr'\\INPPORE07\Resources\Science\ESeal\{dynamicDir}\Images\TagResight'
+            outPhotosDFwAtt['ServerLocation'] = serverLoc
+
+            # Fields to drop
+            fieldListDrop = ['ParentGlobalID', 'ID', 'GlobalID']
+            outPhotosDFwAtt.drop(fieldListDrop, axis=1, inplace=True)
+
+            # Append the records that had photo attachments
+            # Grab all column names from the dataframe
+            cols = outPhotosDFwAtt.columns.tolist()
+
+            recCount = outPhotosDFwAtt.shape[0]
+
+            # Append to table
+            # Build the SQL query dynamically
+            insertQuery = (
+               f"INSERT INTO tblResightPhotos ({', '.join(cols)}) "
+               f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outPhotosDFwAtt, "tblResightPhotos", insertQuery,
+                                           dmInstance)
+
+            logMsg = f"Success process_ResightPhotos - appended - {recCount} - records to the tblResightPhotos table."
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.info(logMsg)
+
+            return outDFSubset
+
+        except Exception as e:
+
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py.py - process_ResightPhotos: {e}'
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logging.critical(logMsg, exc_info=True)
+            traceback.print_exc(file=sys.stdout)
+
+
+
+
+
 
 
 def processRedFurShark(inDF, etlInstance, dmInstance):
@@ -1014,8 +1236,7 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
         # Check for Lookups not defined via an outer join.
         # If is null then these are undefined contacts
         dfObserversNull = dfObserversOtherwLK[
-            dfObserversOtherwLK['ObserverID'].isna() | (dfObserversOtherwLK['ObserverID'] == 389)
-            ]
+            dfObserversOtherwLK['ObserverID'].isna()]
 
         numRec = dfObserversNull.shape[0]
         if numRec >= 1:
@@ -1193,6 +1414,11 @@ def processResightRecords(inDF, etlInstance, dmInstance):
     :param dmInstance: Data Management instance
 
     :return outDFResightRec: Data Frame with the append records
+
+    Updates:
+
+    4/1/2026 - Removed PhotoNames Left and Right from Processing, added GlobalID, photo names will be pushed to the new
+    tblResightPhotos table.
     """
 
     try:
@@ -1201,8 +1427,7 @@ def processResightRecords(inDF, etlInstance, dmInstance):
         inDFResightRec = inDF[["EventID", "LocationID", "MatureCode", "ConditionCode", "Sex", "Dye", "DyeCode",
                                "LtagColor", "LtagNo", "LtagPosn",
                                "LtagCode", "RtagColor", "RtagNo", "RtagPosn", "RtagCode",
-                               "ReproductiveStatusCode", "PupSize", "PhotoNameLeft", "PhotoNameRight",
-                               "Comments", "CreatedDate"]]
+                               "ReproductiveStatusCode", "PupSize", "Comments", "CreatedDate", "GlobalID"]]
 
         # Update any 'nan' string or np.nan values to None to consistently handle null values.
         inDFResightRec2 = inDFResightRec.replace([np.nan, 'nan'], None)
@@ -1213,13 +1438,21 @@ def processResightRecords(inDF, etlInstance, dmInstance):
                 lambda x: x.upper() if isinstance(x, str) else x
             )
 
+        # Trim all DyeCode String Decimal points to integer (e.g. 2.0 to 2, etc.) so lookup has match in tluDyeCode.
+        # append query
+        inDFResightRec2['DyeCode'] = (
+            inDFResightRec2['DyeCode']
+            .where(inDFResightRec2['DyeCode'].isna(), inDFResightRec2['DyeCode'].astype(str).str.split('.').str[0]))
+
         # Append to the 'tblResights' table
         insertQuery = (
             f'INSERT INTO tblResights (EventID, LocationID, MatureCode, ConditionCode, Sex, Dye, DyeCode, '
             f'LtagColor,'
             f' LtagNo, LtagPosn, LtagCode, RtagColor, RtagNo, RtagPosn, RtagCode, ReproductiveStatusCode, '
-            f' PupSize, PhotoNameLeft, PhotoNameRight, Comments, CreatedDate)'
-            f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            f' PupSize, Comments, CreatedDate, GlobalID)'
+            f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+
+
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         dm.generalDMClass.appendDataSet(cnxn, inDFResightRec2, "tblResights", insertQuery, dmInstance)
@@ -1335,3 +1568,763 @@ def processDistBehavior(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+
+def uniqueEvents(outDFEvents, etlInstance, dmInstance):
+
+    """
+    Identify where multiple events and define the master events when multiple.
+    Multiple events will be determined using the 'ProjectCode' (i.e. E_Seal or 'Seal_Resight') and SurveyDate fields
+
+    :param outDFEvents: Events Dataframe being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outUniqueEventsDF: DataFrame Identifying the Events with Multiple and which Event will be the Master Event.
+    """
+
+    try:
+
+        outUniqueEventsDF = outDFEvents.copy()
+
+        # Get Count of Event Records by the 'ProjectCode', 'SurveyDate' fields
+        outUniqueEventsDF['RecordCount'] = (
+            outUniqueEventsDF.groupby(['ProjectCode', 'StartDate'])['ProjectCode']
+            .transform('size'))
+
+        # Identify the Master Event - these will be retained.
+        outUniqueEventsDF['MasterEvent'] = (
+            outUniqueEventsDF.groupby(['ProjectCode', 'StartDate'])
+            .cumcount()
+            .eq(0)
+            .map({True: 'Yes', False: 'No'})
+        )
+
+        #Sort By Start and ProjectCode
+        outUniqueEventsDF = outUniqueEventsDF.sort_values(by=['StartDate', 'ProjectCode'])
+
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - uniqueEvents"
+        logging.info(logMsg)
+
+        return outUniqueEventsDF
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - uniqueEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
+
+    """
+    Parent Script for workflow to consolidate/merage the Event tables when multiple tablet data collection.
+    Processing tblEvents, tblElephantEvents, and tblResightEvents
+
+    Find Min and Max Start Times
+    Collection Device - Compiled
+
+
+    :param outUniqueEventsDF: Events Dataframe with the Multiple/Split Events
+    :param outDFElephantEvents: Elephant Seals Event dataframe
+    :param outDFResightEvents: Resight Event dataframe
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+        # Subset to only the Records that are split events.
+        eventsWithMultiple = outUniqueEventsDF[outUniqueEventsDF['RecordCount'] > 1]
+
+        # Consolidate tblEvents
+        outFun = consolidateTblEvents(eventsWithMultiple, etlInstance, dmInstance)
+
+        # Consolidate tblElephantEvents
+        outFun = consolidateTblElephantEvents(eventsWithMultiple, outDFElephantEvents, etlInstance, dmInstance)
+
+        # Consolidate tblResightEvents
+        outFun = consolidateTblResightEvents(eventsWithMultiple, outDFResightEvents, etlInstance, dmInstance)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateSplitEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateSplitEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Fail"
+
+
+def deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance):
+    """
+    Delete the not Master Multiple/Split Events for the Event Tables. This is done post completion of the Migration to
+    master routines in the 'updateToMasterEventID' function.
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return string: - Denoting Success or Failed
+    should be de
+    """
+
+    try:
+
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(notMasterEventsFinal, tempTable, etlInstance.inDBBE)
+
+        # Event tables to be processed
+        tableList = ['tblEvents', 'tblElephantEvents', 'tblResightEvents']
+
+        for table in tableList:
+
+            # Define the Delete Query
+            update_sql = (f'DELETE {table}.* FROM {table} INNER JOIN tmpTable_ETL ON '
+                          f'{table}.EventID = tmpTable_ETL.EventID;')
+
+            # Apply the Delete Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+            logMsg = f'Successfully Deleted Not Master Events from - {table}'
+            print(logMsg)
+            logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - deleteNotMasterEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - deleteNotMasterEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+
+def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
+
+    """
+    For Events with Multiple/Split Events identify the duplicate observers and delete these to avoid duplicate index
+    key errors when the Multiple/Split Events are updated to the Master Event.
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
+    should be defined.
+    """
+
+    try:
+
+        # Import the tblEventObservers
+        # Import Event Table to define the EventID via the GlobalID
+        inQuery = f"SELECT tblEventObservers.* FROM tblEventObservers;"
+
+        # Import tblEventObservers
+        eventObserversDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+
+        # Get Observers by EventID in the Not Master Events
+        observersNotMasterDF = pd.merge(
+            outUniqueEventsDF,
+            eventObserversDF,
+            left_on='EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Get Observers by EventID in the Master Events
+        observersMasterDF = pd.merge(
+            outUniqueEventsDF,
+            eventObserversDF,
+            left_on='MasterEventID',
+            right_on='EventID',
+            how='inner')
+
+        observersMasterDF = observersMasterDF.drop(columns=['EventID_y'])
+        observersMasterDF = observersMasterDF.rename(columns={'EventID_x': 'EventID'})
+
+        # Join to identify the duplicate Observers - these will be deleted
+        duplicatesByEventIDNotMasterDF = pd.merge(
+            observersNotMasterDF,
+            observersMasterDF,
+            left_on=['EventID', 'ObserverID'],
+            right_on=['EventID', 'ObserverID'],
+            how='inner')
+
+
+        # Delete the duplicate observers
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(duplicatesByEventIDNotMasterDF, tempTable, etlInstance.inDBBE)
+
+        # Define the Delete Query
+        update_sql = (f'DELETE tblEventObservers.* FROM tblEventObservers INNER JOIN tmpTable_ETL ON'
+                      f' (tblEventObservers.ObserverID = tmpTable_ETL.ObserverID) AND'
+                      f' (tblEventObservers.EventID = tmpTable_ETL.EventID);')
+
+        # Apply the Delete Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        recCount = duplicatesByEventIDNotMasterDF.shape[0]
+
+        logMsg = (f"Deleted - {recCount} - Duplicate Observer Records (post Split Event Harmonization) from"
+                  f" 'tblEventObservers'")
+        print(logMsg)
+        logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - removeEventObserersDuplicates"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - removeEventObserersDuplicates: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+def defineXwalkToMaster(outUniqueEventsDF, dmInstance):
+
+    """
+    Create the Crosswalk to the Master Event EventID for the Multi/Split Event records.
+
+
+    :param outUniqueEventsDF: Events Dataframe with the Multiple/Split Events
+    :param dmInstance: Data Management instance
+
+    :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
+    should be defined.
+    """
+
+    try:
+
+        # For table Xwalk to the Master EventID
+        # Step 1: Create a helper column with master EventID only where MasterEvent == "Yes"
+        outUniqueEventsDF['MasterEventID'] = np.where(outUniqueEventsDF['MasterEvent'] == 'Yes',
+                                                      outUniqueEventsDF['EventID'], np.nan)
+
+        # Step 2: Forward/backward fill within each group to propagate the master ID
+        outUniqueEventsDF['MasterEventID'] = (
+            outUniqueEventsDF.groupby(['ProjectCode', 'StartDate'])['MasterEventID']
+            .transform(lambda x: x.ffill().bfill())
+        )
+
+        # Only Process MasterEvent not - 'No'
+        notMasterEventsDF = outUniqueEventsDF[outUniqueEventsDF['MasterEvent'] == 'No']
+
+        # Subset to the 'EventID' and 'MasterEventID' fields
+        cols_needed = ['EventID', 'MasterEventID']
+        notMasterEventsFinal = notMasterEventsDF[cols_needed]
+
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - defineXwalkToMaster"
+        logging.info(logMsg)
+
+        return notMasterEventsFinal
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - defineXwalkToMaster: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
+
+    """
+    Update the downstream tables EventID to the Master Event EventID for the Multi/Split Event records.
+
+
+    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return string: Denote Success for Failed
+    """
+
+    try:
+
+        tableList = ['tblEventObservers', 'tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
+                    'tblSubSitesNotSurveyed']
+
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(notMasterEventsFinal, tempTable, etlInstance.inDBBE)
+
+        # Get Count of records being processed
+        recCount = notMasterEventsFinal.shape[0]
+
+        # Process the tables in need of update
+        for table in tableList:
+
+            # Create the update SQL Statement
+            update_sql = dm.generalDMClass.build_access_update_sqlEventID(df=notMasterEventsFinal,
+                                                                   target_table=table,
+                                                                   source_table=tempTable,
+                                                                   join_field="EventID")
+
+            # Apply the Update Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+            logMsg = f'Successfully Updated EventID to the MasterEventID in - {table}.'
+            logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - updateToMasterEventID: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+
+def consolidateTblEvents(outUniqueEventsDF, etlInstance, dmInstance):
+
+    """
+    Consolidate tblEvents - Min StartTime, Max EndTime, GlobalID - Concatenated.
+    Updates are pushed back to the tblEvents table
+
+    :param outUniqueEventsDF: Events Dataframe being processed
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+        # Convert to Date Time
+        outUniqueEventsDF['StartTime'] = pd.to_datetime(outUniqueEventsDF['StartTime'], format='%H:%M:%S')
+        outUniqueEventsDF['EndTime'] = pd.to_datetime(outUniqueEventsDF['EndTime'], format='%H:%M:%S')
+
+        # Unique Fields
+        grp_keys = ['ProjectCode', 'StartDate']
+
+        # 1) Aggregated values per (ProjectCode, StartDate) ---
+        agg = (outUniqueEventsDF.groupby(grp_keys)
+               .agg(StartTime=('StartTime', 'min'),
+                    EndTime=('EndTime', 'max'),
+                    GlobalID=('GlobalID', dm.generalDMClass.concat_comments))
+               .reset_index())
+
+        #2) Keep exactly one master row per group ---
+        masters = (outUniqueEventsDF[outUniqueEventsDF['MasterEvent'].str.upper().eq('YES')]
+                   .sort_values(grp_keys + ['StartTime'])  # tie-breaker if needed
+                   .drop_duplicates(grp_keys, keep='first'))
+
+        #3) Merge aggregated fields onto masters ---
+        eventsDFToUpdate = (masters
+                     .drop(columns=['StartTime', 'EndTime', 'GlobalID'])  # will replace with agg values
+                     .merge(agg, on=grp_keys, how='left')
+                     .sort_values(grp_keys))
+
+        #4) Convert the StartDate to ISO and StartTime and EndTime to ISO string objects
+        eventsDFToUpdate['StartDate'] = pd.to_datetime(eventsDFToUpdate['StartDate']).dt.strftime('%Y-%m-%d')
+
+        eventsDFToUpdate['StartTime'] = pd.to_datetime(eventsDFToUpdate['StartTime']).dt.strftime('%H:%M:%S')
+        eventsDFToUpdate['EndTime'] = pd.to_datetime(eventsDFToUpdate['EndTime']).dt.strftime('%H:%M:%S')
+
+        # Perform the Update Query
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        #Subset to Only the fields needing update:
+        cols_needed = ['EventID', 'StartTime', 'EndTime', 'GlobalID']
+        eventsDFToUpdateFinal = eventsDFToUpdate[cols_needed]
+
+
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblEvents",
+                                                               source_table=tempTable,
+                                                               join_field="EventID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(eventsDFToUpdateFinal, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        # Get Count of records being processed
+        recCount = eventsDFToUpdateFinal.shape[0]
+
+        logMsg = f'Successfully Updated Multi-Table Events for - {recCount} - records in tblEvents'
+        logging.info(logMsg)
+        print(logMsg)
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateTblEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateTblEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, dmInstance):
+
+    """
+    Consolidate tblElephantEvents -
+    Updates are pushed back to the tblElephantEvents table
+
+    Logic applied to multiple records:
+    Comments=('Comments', dm.generalDMClass.concat_comments) - Concatenates
+    DeviceListCompiled=('CollectionDeviceID', dm.generalDMClass.concat_comments - Concatenates
+    Visibility=('Visibility', dm.generalDMClass.first_not_null - First Not Null
+    SurveyType=('SurveyType', dm.generalDMClass.first_not_null - First Not Null
+    RegionalSurvey=('RegionalSurvey', 'any') - Takes first Not Null RegionalSurvey if present
+    RegionalCountCode=('RegionalCountCode', dm.generalDMClass.first_not_null - First Not Null
+
+    :param outUniqueEventsDF: Events Dataframe being processed
+    :param outDFElephantEvents: Output Elephant Events Dataframe
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+        #Only Need the CollectiveDeviceID field
+        outDFElephantEvents_subset = outDFElephantEvents[['EventID', 'CollectionDeviceID', 'SurveyType',
+                                                          'RegionalSurvey', 'RegionalCountCode']]
+        #Inner Join On the Elephant Seal Events, only these need updating
+        elephantEventsMerge = pd.merge(
+            outUniqueEventsDF,
+            outDFElephantEvents_subset,
+            left_on= 'EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Unique Fields
+        grp_keys = ['ProjectCode', 'StartDate']
+
+        # 1) Aggregated values per Unique Key
+        agg = (elephantEventsMerge.groupby(grp_keys)
+              .agg(
+                Comments=('Comments', dm.generalDMClass.concat_comments),
+                DeviceListCompiled=('CollectionDeviceID', dm.generalDMClass.concat_comments),
+                Visibility=('Visibility', dm.generalDMClass.first_not_null),
+                SurveyType=('SurveyType', dm.generalDMClass.first_not_null),
+                RegionalSurvey=('RegionalSurvey', 'any'),
+                RegionalCountCode=('RegionalCountCode', dm.generalDMClass.first_not_null)
+                )
+               .reset_index()
+               )
+
+        # 2) Keep exactly one master row per group ---
+        masters = (elephantEventsMerge[elephantEventsMerge['MasterEvent'].str.upper().eq('YES')]
+                   .sort_values(grp_keys + ['StartTime'])  # tie-breaker if needed
+                   .drop_duplicates(grp_keys, keep='first'))
+
+        # 3) Merge aggregated fields onto masters ---
+        elephantEventsMerge2 = (masters
+                            .drop(columns=['Comments', 'Visibility', 'SurveyType', 'RegionalSurvey', 'RegionalCountCode'])  # will replace with agg values
+                            .merge(agg, on=grp_keys, how='left')
+                            .sort_values(grp_keys))
+
+        #4) Add the DeviceListCompiled to the Comments list field
+        elephantEventsMerge2['Comments'] = elephantEventsMerge2.apply(
+            lambda x: (
+                f"{x['Comments']}|Devices: {x['DeviceListCompiled']}"
+                if pd.notna(x['Comments']) and str(x['Comments']) != '' and pd.notna(x['DeviceListCompiled']) and str(
+                    x['DeviceListCompiled']) != ''
+                else f"Devices: {x['DeviceListCompiled']}"
+                if pd.notna(x['DeviceListCompiled']) and str(x['DeviceListCompiled']) != ''
+                else x['Comments']
+            ),
+            axis=1
+        )
+
+        #  Drop the 'DeviceListCompiledField
+        elephantEventsMerge2 = elephantEventsMerge2.drop(columns=['DeviceListCompiled'])
+
+        # Perform the Update Query
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Subset to Only the fields needing update:
+        cols_needed = ['EventID', 'Comments', 'Visibility', 'SurveyType', 'RegionalSurvey', 'RegionalCountCode']
+        eventsDFToUpdateFinal = elephantEventsMerge2[cols_needed]
+
+
+        # Set Nan to None
+        eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
+
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblElephantEvents",
+                                                               source_table=tempTable,
+                                                               join_field="EventID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(eventsDFToUpdateFinal, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        # Get Count of records being processed
+        recCount = eventsDFToUpdateFinal.shape[0]
+
+        logMsg = f'Successfully Updated Multi-Table Events for - {recCount} - records in tblElephantEvents'
+        logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateElephantEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateElephantEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
+def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstance, dmInstance):
+
+    """
+    Consolidate tblResightEvents -
+    Updates are pushed back to the tblElephantEvents table
+
+    Logic applied to multiple records:
+    Comments=('Comments', dm.generalDMClass.concat_comments) - Concatenates
+    Visibility=('Visibility', dm.generalDMClass.first_not_null - First Not Null
+    Park Code - First Not Null
+    Season - First Not Null
+
+    :param outUniqueEventsDF: Events Dataframe being processed
+    :param outDFResightEvents: Output Resight Events Dataframe
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String - denoting success or failure
+    """
+
+    try:
+
+        #Only Need the EventID field the Comments, Visibility, Season, and ParkCode values are also in the Event DF
+        outDFResightEvents_subset = outDFResightEvents[['EventID']]
+        #Inner Join on the events needing update
+        resightEventsMerge = pd.merge(
+            outUniqueEventsDF,
+            outDFResightEvents_subset,
+            left_on= 'EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Unique Fields
+        grp_keys = ['ProjectCode', 'StartDate']
+
+        # 1) Aggregated values per Unique Key
+        agg = (resightEventsMerge.groupby(grp_keys)
+              .agg(
+                Comments=('Comments', dm.generalDMClass.concat_comments),
+                Visibility=('Visibility', dm.generalDMClass.first_not_null),
+                Season=('Season', dm.generalDMClass.first_not_null),
+                ParkCode=('ParkCode', dm.generalDMClass.first_not_null),
+                )
+               .reset_index()
+               )
+
+        # 2) Keep exactly one master row per group ---
+        masters = (resightEventsMerge[resightEventsMerge['MasterEvent'].str.upper().eq('YES')]
+                   .sort_values(grp_keys + ['StartTime'])  # tie-breaker if needed
+                   .drop_duplicates(grp_keys, keep='first'))
+
+        # 3) Merge aggregated fields onto masters ---
+        resightEventsMerge2 = (masters
+                            .drop(columns=['Comments', 'Visibility', 'Season', 'ParkCode'])  # will replace with agg values
+                            .merge(agg, on=grp_keys, how='left')
+                            .sort_values(grp_keys))
+
+        # Perform the Update Query
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Subset to Only the fields needing update:
+        cols_needed = ['EventID', 'Comments', 'Visibility', 'Season', 'ParkCode']
+        eventsDFToUpdateFinal = resightEventsMerge2[cols_needed]
+
+        # # Set Nan to None
+        # eventsDFToUpdateFinal = eventsDFToUpdateFinal.replace({np.nan: None})
+
+        # Comments to None including white space ''
+        eventsDFToUpdateFinal['Comments'] = (
+            eventsDFToUpdateFinal['Comments']
+            .astype(object)
+            .replace(r'^\s*$', None, regex=True)  # empty or whitespace → None
+        )
+
+
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdateFinal, target_table="tblResightEvents",
+                                                               source_table=tempTable,
+                                                               join_field="EventID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(eventsDFToUpdateFinal, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        # Get Count of records being processed
+        recCount = eventsDFToUpdateFinal.shape[0]
+
+        logMsg = f'Successfully Updated Multi-Table Events for - {recCount} - records in tblResightEvents'
+        logging.info(logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - consolidateTblResightEvents"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - consolidateTblResightEvents: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+def subsetToSeason(outDFDic, etlInstance, dmInstance):
+    """
+    Subset the passed AGOL dataframe dictionaries to the defined elephanSeason.
+
+    :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return outFCDicSub: Dictionary with all imported dataframes from the imported feature layer subset to the defined
+        elephantSeason.
+    """
+
+    try:
+
+        eSeasonLU = etlInstance.elephantSeason
+
+        # Filter to the Season
+        if "breeding" in eSeasonLU.lower():
+            filtered = "Yes"
+
+            # Read in the Survey Metadata Dataframe:
+            inDFSurvey = None
+            for key, df in outDFDic.items():
+                if 'ElephantSeal' in key:
+                    inDFSurvey = df
+                    break
+            # Apply the subset
+            inDFSurveySub = inDFSurvey[inDFSurvey['Season'].str.contains('breeding', case=False, na=False)]
+
+        elif "molt" in eSeasonLU.lower():
+            filtered = "Yes"
+
+            # Read in the Survey Metadata Dataframe:
+            inDFSurvey = None
+            for key, df in outDFDic.items():
+                if 'ElephantSeal' in key:
+                    inDFSurvey = df
+                    break
+            # Apply the subset
+            inDFSurveySub = inDFSurvey[~inDFSurvey['Season'].str.contains('breeding', case=False, na=False)]
+
+        else: #No Filter Applied
+            filtered = "No"
+
+            logMsg = f'No Filter/Subset applied to Feature Layer - elephantSeason - defined as: {eSeasonLU}.'
+            logging.info(logMsg)
+            print(logMsg)
+
+        if filtered == "No":  #Return copy of the original dataframe
+            outDFDicSub = {k: v.copy() for k, v in outDFDic.items()}
+
+        else:
+
+            # Read in Counts Repeat
+            inDFCounts = None
+            for key, df in outDFDic.items():
+                if 'countsrepeats' in key:
+                    inDFCounts = df
+                    break
+            # Resights
+            inDFResights = None
+            for key, df in outDFDic.items():
+                if 'resightsrepeats' in key:
+                    inDFResights = df
+                    break
+
+            # Disturbance
+            inDFDisturbance = None
+            for key, df in outDFDic.items():
+                if 'disturbancerepeat' in key:
+                    inDFDisturbance = df
+                    break
+
+            # Subset Counts, Resights, and Disturbance to the 'inDFSurveySub' dataframe subset
+            inDFCountsSub = subset_by_survey(inDFCounts, inDFSurveySub, join_field='ParentGlobalID')
+            inDFResightsSub = subset_by_survey(inDFResights, inDFSurveySub, join_field='ParentGlobalID')
+            inDFDisturbanceSub = subset_by_survey(inDFDisturbance, inDFSurveySub, join_field='ParentGlobalID')
+
+            # Combine all four dataframes into a dictionary (ie. outFCDicSub) one key per dataframe
+            outFCDicSub = {
+                'ElephantSealSub': inDFSurveySub,
+                'countsrepeatsSub': inDFCountsSub,
+                'resightsrepeatsSub': inDFResightsSub,
+                'disturbancerepeatSub': inDFDisturbanceSub
+            }
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - subsetToSeason"
+        logging.info(logMsg)
+
+        return outFCDicSub
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - subsetToSeason: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        return "Failed"
+
+def subset_by_survey(df_to_filter, survey_df, join_field='ParentGlobalID'):
+    """
+    Keeps only rows in df_to_filter where join_field matches 'GlobalID' in survey_df
+    """
+    filterDF = pd.merge(
+        df_to_filter,
+        survey_df[['GlobalID']],  # Only need GlobalID from survey
+        left_on=join_field,
+        right_on='GlobalID',
+        how='inner'
+    )  # Drop duplicate join field
+
+    # Drop GlobalID_y and renamie GlobalID_x
+    dfFinal = filterDF.drop(columns=['GlobalID_y']).rename(columns={'GlobalID_x': 'GlobalID'})
+
+    return dfFinal

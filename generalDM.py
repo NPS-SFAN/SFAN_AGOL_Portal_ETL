@@ -13,6 +13,7 @@ import logging
 import psutil
 from zipfile import ZipFile
 import glob
+import numpy as np
 
 class generalDMClass:
 
@@ -382,6 +383,7 @@ class generalDMClass:
         cnxn = generalDMClass.connect_DB_Access(inDBBE)
 
         try:
+
             # Create a cursor object
             cursor = cnxn.cursor()
             cursor.execute(inQuery)
@@ -965,6 +967,65 @@ class generalDMClass:
 
         return sql.strip()
 
+    def build_access_update_sqlEventID(
+            df,
+            target_table,
+            source_table,
+            join_field):
+        """
+        Build MS Access SQL to update EventID = MasterEventID via INNER JOIN. Being used in Elephant Seals Pinnipeds
+        processing when events split across multiple tablets.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Must contain join_field and 'MasterEventID'.
+        target_table : str
+            Table being updated.
+        source_table : str
+            Temp/staging table with MasterEventID values.
+        join_field : str
+            Field used to join tables.
+
+
+        Returns
+        -------
+        str
+            SQL UPDATE statement.
+        """
+
+        # Validation
+        required_cols = {join_field, 'MasterEventID'}
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
+        # Base SQL
+        sql = f"""
+        UPDATE {target_table}
+        INNER JOIN {source_table}
+            ON {target_table}.[{join_field}] = {source_table}.[{join_field}]
+        SET
+            {target_table}.[EventID] = {source_table}.[MasterEventID]
+        """
+
+        sql += ";"
+
+        return sql.strip()
+
+    # Concatenate Field to string
+    def concat_comments(s: pd.Series) -> str:
+        s = s.dropna().astype(str).str.strip()
+        s = s[s.ne('')]
+        return ' | '.join(pd.unique(s))
+
+    # Take the first not null value in a dataframe field workflow
+    def first_not_null(s: pd.Series):
+        s_clean = (
+            s.replace(r'^\s*$', np.nan, regex=True)  # empty or whitespace → NaN
+            .dropna()
+        )
+        return s_clean.iloc[0] if not s_clean.empty else np.nan
 
     if __name__ == "__name__":
         logger.info("generalDM.py")
