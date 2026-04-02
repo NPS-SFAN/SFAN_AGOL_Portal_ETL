@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20260401wETL.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedBE_20260402wETL.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PinnipedFE_20251208.accdb'
 
 # Year Being Processed
@@ -68,7 +68,7 @@ layerID = "3ffd5660210e4064aa685cc95dee43b9"
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id. Note AGOL and Portal
 # have separate OAuth2.0 values.
-pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
+pythonApp_ID = 'xxxxxxx'   # If not using define as 'na' ('client ID'|'na')
 #################################
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
