@@ -1,6 +1,6 @@
 # SFAN_AGOL_Portal ETL
 San Francisco Bay Area Network AGOL and Portal Extract Transform and Load routines.  
-As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS.\
+As of 2/15/2026 - Snowy Plover PORE ETL workflow has been developed, updates for Nest Photos and Nest Summary added - KRS.\
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS.\
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal is developed - KRS.\
 As of 4/2/2026 - Elephant Seal ETL is developed, updates for split event and photo processing - KRS.\
