@@ -867,13 +867,14 @@ class etl_SNPLPORE:
             outDFSubsetNone['Coord_System'] = 'GCS'
             outDFSubsetNone['Datum'] = 'WGS84'
 
-            # Remove ',' values in the 'MICRO' field
-            outDFSubsetNone['MICRO'] = outDFSubsetNone['MICRO'].str.replace(',', '', regex=False)
+
+            # Apply the 'tlu_MicroHabitat' lookup table codes (i.e. MicrohabitatCode field) via the 'ID' field join
+            outDFSubsetwMicro = process_MicroID(etlInstance, dmInstance, outDFSubsetNone)
 
             # Set the 'InitiationDateUnk' field to 'True' if value = 'No' else set to None - this fields
             # logic has been applied backwards in Survey 123
-            outDFSubsetNone['InitiationDateUnk'] = (
-                outDFSubsetNone['InitiationDateUnk']
+            outDFSubsetwMicro['InitiationDateUnk'] = (
+                outDFSubsetwMicro['InitiationDateUnk']
                 .apply(lambda x: True if x == 'No' else None)
             )
 
@@ -881,7 +882,7 @@ class etl_SNPLPORE:
             # Apply Lookups for 'ExclosureType', 'NestFailure',
             ################
 
-            outDFSubsetNonewLk = applyLookups(etlInstance, dmInstance,outDFSubsetNone)
+            outDFSubsetNonewLk = applyLookups(etlInstance, dmInstance, outDFSubsetwMicro)
 
             ############################################################################
             # Process Nests with One 'Nest_ID' record only - This can be simple update
@@ -1623,5 +1624,61 @@ def unique_letters_sorted(series):
         letters.update(str(val).strip())
     letters.discard('')  # guard against empty
     return ''.join(sorted(letters)) if letters else None
+
+
+def process_MicroID(etlInstance, dmInstance, inDF):
+    """
+    Lookup the MicroHabitat Code value from the ID field that is concatenated.  Returns a concatenated MicroHabitat code
+    field with the 'MICRO' (i.e. MicroHabitat Code) field values in the tlu_MicoHabitat Lookup table.
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param inDF: Dataframe being processed
+
+    :return:outDF:  data frame with the newly defined 'MICRO' field values
+    """
+
+    try:
+
+        # Read in the Lookup Table
+        inQuery = f"Select * FROM tlu_MicroHabitat';"
+
+        # PUll the Micro Habitat Table
+        outDFMicroLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Ensure strings
+        inDF['MICRO'] = inDF['MICRO'].astype(str)
+        outDFMicroLookup['ID'] = outDFMicroLookup['ID'].astype(str)
+
+        # Build lookup dictionary: {'1': 'S', '3': 'K', ...}
+        lookup_dict = dict(zip(
+            outDFMicroLookup['ID'],
+            outDFMicroLookup['MicroHabitatCode']
+        ))
+
+        # Function to translate concatenated IDs → concatenated codes
+        def translate_micro(val):
+            try:
+                return ''.join([lookup_dict.get(ch, '') for ch in val])
+            except Exception:
+                return None
+
+        # Apply transformation
+        outDF = inDF.copy()
+        outDF['MICRO'] = outDF['MICRO'].apply(translate_micro)
+
+        logMsg = f"Success process_MicroID."
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.info(logMsg)
+
+        return outDF
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_MicroID: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
 
 
