@@ -637,32 +637,47 @@ class etl_PINNElephant:
             # Insert 'MatureCode' before 'Enumeration'
             cols.insert(enum_index, 'MatureCode')
 
-            # Reorder the DataFrame - This is ready to be added to the 'outDFCountsStack1Melt' dataframe
+            # Reorder the DataFrame
             outDFCountsStack3 = outDFCountsStack3[cols]
 
             # Insert QCNotes field for pending append
             outDFCountsStack3.insert(6, 'QCNotes', np.nan)
 
-            # 2 - Add Other record with a ND value, count and name in the QC Notes field
-            outDFCountsStack_NE = outDFCountsStack2[outDFCountsStack2['SpecifyOther'].notna()]
+            # If a Mature Code of nan define as 'ND' and update QCNotes to 'TaxonNotDefined: nan'
+            mask = outDFCountsStack3['MatureCode'].isna() | (outDFCountsStack3['MatureCode'] == 'nan')
 
-            # Rename 'Other' field to 'Enumeration' and 'DefineOther' to 'MatureCode
-            outDFCountsStack_NE = outDFCountsStack_NE.rename(columns={'Other': 'Enumeration'})
+            # Change QCNotes to Object/Text if not already - was float during testing for some reason
+            if outDFCountsStack3['QCNotes'].dtype != 'object':
+                outDFCountsStack3['QCNotes'] = outDFCountsStack3['QCNotes'].astype('object')
 
-            # Define a MatureCode value of 'ND' that is not Defined
-            outDFCountsStack_NE.insert(4, "MatureCode", "ND")
+            # Apply the Mask to update if nan and define as ND dataframe is now
+            # ready to be added to the 'outDFCountsStack1Melt' dataframe
+            outDFCountsStack3.loc[mask, 'MatureCode'] = 'ND'
+            outDFCountsStack3.loc[mask, 'QCNotes'] = 'Taxon Not Defined: nan'
 
-            # Add QCNotes field with the Specify Other value
-            outDFCountsStack_NE["QCNotes"] = "Taxon Not Defined: " + outDFCountsStack_NE['SpecifyOther']
 
-            # Drop fields DefineOther and SpecifyOther
-            outDFCountsStack_NE = outDFCountsStack_NE.drop(['DefineOther', 'SpecifyOther'], axis=1)
-
-            # Combine/Append the Other records
-            combinedOtherDF = pd.concat([outDFCountsStack3, outDFCountsStack_NE], ignore_index=True)
+            # 2 - Add Other record with a ND value, count and name in the QC Notes field - When Doing this workflow its
+            # adding duplicate ND Records that are already defined in outDFCountsStack3 - Turning section 2 off -
+            # Kirk 5/1/2026.
+            # outDFCountsStack_NE = outDFCountsStack2[outDFCountsStack2['SpecifyOther'].notna()]
+            #
+            # # Rename 'Other' field to 'Enumeration' and 'DefineOther' to 'MatureCode
+            # outDFCountsStack_NE = outDFCountsStack_NE.rename(columns={'Other': 'Enumeration'})
+            #
+            # # Define a MatureCode value of 'ND' that is not Defined
+            # outDFCountsStack_NE.insert(4, "MatureCode", "ND")
+            #
+            # # Add QCNotes field with the Specify Other value
+            # outDFCountsStack_NE["QCNotes"] = "Taxon Not Defined: " + outDFCountsStack_NE['SpecifyOther']
+            #
+            # # Drop fields DefineOther and SpecifyOther
+            # outDFCountsStack_NE = outDFCountsStack_NE.drop(['DefineOther', 'SpecifyOther'], axis=1)
+            #
+            # # Combine/Append the Other records
+            # combinedOtherDF = pd.concat([outDFCountsStack3, outDFCountsStack_NE], ignore_index=True)
 
             # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
-            combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, combinedOtherDF], ignore_index=True)
+            combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, outDFCountsStack3], ignore_index=True)
 
 
             #######
