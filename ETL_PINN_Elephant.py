@@ -15,6 +15,7 @@ import traceback
 import generalDM as dm
 import logging
 import ArcGIS_API as agl
+import inspect
 
 
 class etl_PINNElephant:
@@ -488,6 +489,7 @@ class etl_PINNElephant:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def process_Counts(outDFDic, outDFEvents, etlInstance, dmInstance):
 
@@ -724,6 +726,7 @@ class etl_PINNElephant:
             logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Counts: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def process_Resights(outDFDic, outDFEvents, etlInstance, dmInstance):
 
@@ -821,6 +824,7 @@ class etl_PINNElephant:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Resights: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def process_Disturbance(outDFDic, outDFEvents, etlInstance, dmInstance):
         """
@@ -926,6 +930,7 @@ class etl_PINNElephant:
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_Disturbance: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def process_MultipleTabletEvents(outDFEvents, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
         """
@@ -959,16 +964,24 @@ class etl_PINNElephant:
             outFun = consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents,
                                                        etlInstance, dmInstance)
 
+            #################
+            # Update Downstream Tables with Multiple/Split Events to the Master Event.
+            # For Event Observers when more then 2 tables opportunity to create a duplicate index key
+            # error when performing the update query for the greater than 2 event.
+            # To hanlde both Omissions and Commission, get the master list of observers per ProjectCode/Date, then
+            # to the Master Event append any events that aren't already present.  For this workflow all observers have
+            # already been defined.  Non-Master eveyts are deleted in the 'deleteNotMasterEVents' function below.
+            # Must only unique values in the non master events - create the unique Observers - push to the
+            ###########
+            outFun = defineObserversPerUnique(outUniqueEventsDF, etlInstance, dmInstance)
 
             # Define the CrossWalk to the Master Event when Multiple/Split Events -
             notMasterEventsFinal = defineXwalkToMaster(outUniqueEventsDF, dmInstance)
 
-            # Process the tblEventObservers Not Master - duplicates must be deleted prior to update to Master EventID
-            # in the updateToMasterEventID routine below.
-            outFun = removeEventObserersDuplicates(notMasterEventsFinal, etlInstance, dmInstance)
-
             # Update Downstream Tables with Multiple/Split Events to the Master Event - t
-            outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance)
+            tableList = ['tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
+                    'tblSubSitesNotSurveyed']
+            outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance, tableList)
 
             # Delete the Not Master Events - these have been migrated
             outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
@@ -982,10 +995,9 @@ class etl_PINNElephant:
         except Exception as e:
 
             logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - process_MultipleTabletEvents: {e}'
-
             logging.critical(logMsg, exc_info=True)
-
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
 
     def process_ResightPhotos(outDFResightRec, etlInstance, dmInstance, generalArcGIS):
@@ -1098,11 +1110,7 @@ class etl_PINNElephant:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
-
-
-
-
-
+            sys.exit(1)
 
 
 def processRedFurShark(inDF, etlInstance, dmInstance):
@@ -1147,6 +1155,7 @@ def processRedFurShark(inDF, etlInstance, dmInstance):
         logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - procesRedFurShark: {e}'
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
 
 def processElephantContacts(inDF, etlInstance, dmInstance):
@@ -1268,6 +1277,7 @@ def processElephantContacts(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
 def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
     """
@@ -1351,7 +1361,7 @@ def tblSubSitesNotSurveyed(inDF, inDFEvents, etlInstance, dmInstance):
         logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - tblSubSitesNotSurveyed: {e}'
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-
+        sys.exit(1)
 
 
 def processResightEvents(inDF, etlInstance, dmInstance):
@@ -1404,6 +1414,8 @@ def processResightEvents(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def processResightRecords(inDF, etlInstance, dmInstance):
     """
@@ -1468,6 +1480,8 @@ def processResightRecords(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def processDistRec(inDF, etlInstance, dmInstance):
     """
@@ -1508,6 +1522,8 @@ def processDistRec(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def processDistBehavior(inDF, etlInstance, dmInstance):
     """
@@ -1568,6 +1584,8 @@ def processDistBehavior(inDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def uniqueEvents(outDFEvents, etlInstance, dmInstance):
 
@@ -1579,7 +1597,8 @@ def uniqueEvents(outDFEvents, etlInstance, dmInstance):
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
-    :return outUniqueEventsDF: DataFrame Identifying the Events with Multiple and which Event will be the Master Event.
+    :return outUniqueEventsDF: DataFrame Identifying the Events with Multiple Events and which Event will be the
+    Master Event.
     """
 
     try:
@@ -1614,6 +1633,7 @@ def uniqueEvents(outDFEvents, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
 
 def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
@@ -1660,7 +1680,7 @@ def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightE
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-        return "Fail"
+        sys.exit(1)
 
 
 def deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance):
@@ -1711,21 +1731,20 @@ def deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-        return "Failed"
+        sys.exit(1)
 
 
-def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
+def removeEventObserersDuplicates(notMasterEventsFinal, etlInstance, dmInstance):
 
     """
     For Events with Multiple/Split Events identify the duplicate observers and delete these to avoid duplicate index
     key errors when the Multiple/Split Events are updated to the Master Event.
 
-    :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
+    :param outUniqueEventsDF - Dataframe with the Not Master Events and the corresponding Master Event ID
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
 
-    :return notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID that
-    should be defined.
+    :return String Denoting Success
     """
 
     try:
@@ -1740,7 +1759,7 @@ def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
 
         # Get Observers by EventID in the Not Master Events
         observersNotMasterDF = pd.merge(
-            outUniqueEventsDF,
+            notMasterEventsFinal,
             eventObserversDF,
             left_on='EventID',
             right_on='EventID',
@@ -1748,7 +1767,7 @@ def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
 
         # Get Observers by EventID in the Master Events
         observersMasterDF = pd.merge(
-            outUniqueEventsDF,
+            notMasterEventsFinal,
             eventObserversDF,
             left_on='MasterEventID',
             right_on='EventID',
@@ -1799,7 +1818,119 @@ def removeEventObserersDuplicates(outUniqueEventsDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-        return "Failed"
+        sys.exit(1)
+
+
+def defineObserversPerUnique(outUniqueEventsDF, etlInstance, dmInstance):
+
+    """
+    Define the Unique Observers across all events at the Project, Date Unique Identifier.  Append the observers that are
+    not already in the Master Event so all users are defined across the surveys being merged.
+
+    Worklflow expects all obsevers for all events to be already defined.
+
+    :param outUniqueEventsDF - DataFrame with Master and Not Master Events Defined.
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+
+    :return String denote Success or Failure append the unique Observers remaining to append to get a compiled across
+    all surveys 1, 2, 3...etc.
+    """
+
+    try:
+
+        # Import the tblEventObservers
+
+        inQuery = f"SELECT tblEventObservers.* FROM tblEventObservers;"
+
+        # Import tblEventObservers
+        eventObserversDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Get Observers for the Events that are being processed
+        observersAllRelevant = pd.merge(
+            outUniqueEventsDF,
+            eventObserversDF,
+            left_on='EventID',
+            right_on='EventID',
+            how='inner')
+
+        # Get the Unique Observer IDs per ['ProjectCode', 'StartDate'] grouping
+        obsByUniqueEvent = (
+            observersAllRelevant
+            .drop_duplicates(['ProjectCode', 'StartDate', 'ObserverID'])
+            [['ProjectCode', 'StartDate', 'ObserverID']]
+            .reset_index(drop=True))
+
+        # Get the Observers Already Defined in the Master Event
+        observersMasterAlready = observersAllRelevant.loc[
+            observersAllRelevant['MasterEvent'] == 'Yes',
+            ['EventID', 'ProjectCode', 'StartDate', 'ObserverID', 'MasterEvent']
+        ]
+
+        # Left Join to see which Observers Still Need to be appended to the Master Event, retain on the missing records
+        observersToAppend = (
+            obsByUniqueEvent
+            .merge(
+                observersMasterAlready,
+                on=['ProjectCode', 'StartDate', 'ObserverID'],
+                how='left',
+                indicator=True
+            )
+            .query("_merge == 'left_only'")
+            .drop(columns=['_merge', 'EventID', 'MasterEvent'])
+        )
+
+        # Subset to only the Master Events
+        masterEventsDF = outUniqueEventsDF[outUniqueEventsDF['MasterEvent']=='Yes']
+
+        # Redefine the Master EventID
+        observersToAppendwMasterID = pd.merge(
+            observersToAppend,
+            masterEventsDF[['ProjectCode', 'StartDate', 'EventID']],
+            left_on=['ProjectCode', 'StartDate'],
+            right_on=['ProjectCode', 'StartDate'],
+            how='inner')
+
+        # Drop ProjectCode and Rename StartDate - CreatedDate
+        observersToAppendwMasterID = (observersToAppendwMasterID.drop(columns=['ProjectCode']).
+                                      rename(columns={'StartDate': 'CreatedDate'}))
+
+        # Append the records that had photo attachments
+        # Grab all column names from the dataframe
+        cols = observersToAppendwMasterID.columns.tolist()
+
+        recCount = observersToAppend.shape[0]
+
+        # Append to the Masters Event the missing Observers.
+        # Build the SQL query dynamically
+        insertQuery = (
+            f"INSERT INTO tblEventObservers ({', '.join(cols)}) "
+            f"VALUES ({', '.join(['?'] * len(cols))})")
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, observersToAppendwMasterID, "tblEventObservers", insertQuery,
+                                        dmInstance)
+
+        logMsg = (f"Added - {recCount} - Observers to Master Events to Get the Compiled across all Surveys) - to table"
+                  f" 'tblEventObservers'")
+        print(logMsg)
+        logging.info(logMsg)
+
+        func_name = inspect.currentframe().f_code.co_name
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - {func_name}"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        func_name = inspect.currentframe().f_code.co_name
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - {func_name}: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def defineXwalkToMaster(outUniqueEventsDF, dmInstance):
 
@@ -1846,9 +1977,10 @@ def defineXwalkToMaster(outUniqueEventsDF, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
 
-def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
+def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance, tableList):
 
     """
     Update the downstream tables EventID to the Master Event EventID for the Multi/Split Event records.
@@ -1857,23 +1989,19 @@ def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
     :param notMasterEventsFinal - Dataframe with the Not Master Events and the corresponding Master Event ID
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
+    :param tableList: List of tables to be processed
 
     :return string: Denote Success for Failed
     """
 
     try:
 
-        tableList = ['tblEventObservers', 'tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
-                    'tblSubSitesNotSurveyed']
 
         # Temporary Table Created for Updated Query Processing
         tempTable = 'tmpTable_ETL'
 
         # Create the temp table
         dm.generalDMClass.createTableFromDF(notMasterEventsFinal, tempTable, etlInstance.inDBBE)
-
-        # Get Count of records being processed
-        recCount = notMasterEventsFinal.shape[0]
 
         # Process the tables in need of update
         for table in tableList:
@@ -1902,6 +2030,7 @@ def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance):
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
         return "Failed"
+        sys.exit(1)
 
 
 def consolidateTblEvents(outUniqueEventsDF, etlInstance, dmInstance):
@@ -1987,6 +2116,8 @@ def consolidateTblEvents(outUniqueEventsDF, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInstance, dmInstance):
 
@@ -2106,6 +2237,7 @@ def consolidateTblElephantEvents(outUniqueEventsDF, outDFElephantEvents, etlInst
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
 
 def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstance, dmInstance):
@@ -2212,6 +2344,8 @@ def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstan
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
 
 def subsetToSeason(outDFDic, etlInstance, dmInstance):
     """
@@ -2310,7 +2444,8 @@ def subsetToSeason(outDFDic, etlInstance, dmInstance):
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-        return "Failed"
+        sys.exit(1)
+
 
 def subset_by_survey(df_to_filter, survey_df, join_field='ParentGlobalID'):
     """
