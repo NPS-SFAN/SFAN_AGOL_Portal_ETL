@@ -47,13 +47,13 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol/Item Being Processes
-protocol = 'SNPLPORE'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
+protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\Database\Dbase_BE\TestETL\PORE_SNPL_BE_20260421_Testing.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\Database\PORE_SNPL_FrontEnd_20250930.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing\PinnipedBE_20260424_Testing - Copy.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing\PinnipedFE_20260424_Testing.accdb'
 
 # Year Being Processed
-inYear = 2025
+inYear = 2026
 
 #################################
 # AGOL/Portal Variables to definer
@@ -77,7 +77,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2025'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
@@ -87,7 +87,7 @@ AGOLDownload = 'No'  # ('Yes'|'No')
 # Directory where exported photos (if applicable) from survey 123 will be exported (SFAN Azure, Local Directory, etc.)
 # Recommend downloading photos locally then posting to the server afterwards due to slow transfer during processing if
 # you push to the server.
-photoDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SnowyPlovers_PORE\SNPLOVER\SNPL_IM\Data\ETL\2025\Photos'
+photoDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Photos'
 
 # Pinnipeds Elephant Seal - must define which season is being processed (e.g. Breeding Season, Molt, All). Note 'Molt'
 # will process both Molt and all other not Breeding Season.
