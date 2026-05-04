@@ -524,7 +524,7 @@ class etl_PINNElephant:
                          "Dead Pup": "DEPUP",
                          "PHOCA": "ADULT",
                          "PHOCA Pup": "HPUP",
-                         "Dead Pup Harbor": "DEHPUP",
+                         "PHOCA Pup Dead": "DEHPUP",
                          "ZALOPHUS": "ZAL",
                          "Define Other": "DefineOther",
                          "Specify other.": "SpecifyOther",
