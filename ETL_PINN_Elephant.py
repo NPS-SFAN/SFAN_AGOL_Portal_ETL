@@ -515,7 +515,8 @@ class etl_PINNElephant:
                     break
 
             outDFSubset = inDF[["Sub Site",	"Bull", "SA4","SA3", "SA2", "SA1", "Other SA", "Cow", "Pup", "Dead Pup",
-                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "ZALOPHUS", "Other", "Define Other",
+                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "Dead Pup Harbor", "ZALOPHUS", "Other",
+                                "Define Other",
                                 "Specify other.", "Red Seal", "Shark Bite", "ParentGlobalID", "CreationDate"]].rename(
                 columns={"Sub Site": "LocationID",
                          "Other SA": "OtherSA",
@@ -523,6 +524,7 @@ class etl_PINNElephant:
                          "Dead Pup": "DEPUP",
                          "PHOCA": "ADULT",
                          "PHOCA Pup": "HPUP",
+                         "Dead Pup Harbor": "DEHPUP",
                          "ZALOPHUS": "ZAL",
                          "Define Other": "DefineOther",
                          "Specify other.": "SpecifyOther",
@@ -692,6 +694,12 @@ class etl_PINNElephant:
 
             # Change DEPUP MatureCode values to EPUP
             combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].replace('DEPUP', 'EPUP')
+
+            # Define 'Qualifier' and 'QCFlag' fields to 'DEAD' where 'DEHPUP' -Added 5/4/2026
+            combinedAllCountsDF.loc[combinedAllCountsDF['MatureCode'] == 'DEHPUP', ['Qualifier', 'QCFlag']] = 'DEAD'
+
+            # Change DEHPUP MatureCode values to HPUP - Added 5/4/2026
+            combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].replace('DEHPUP', 'HPUP')
 
             # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
             duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
