@@ -12,6 +12,9 @@ import pandas as pd
 import numpy as np
 import os, sys
 import traceback
+
+from sqlalchemy.dialects.mssql.information_schema import columns
+
 import generalDM as dm
 import logging
 import ArcGIS_API as agl
@@ -559,6 +562,7 @@ class etl_PINNElephant:
             outDFCountswEventID = pd.merge(outDFCounts, outDFEvents_ESeal, how='left', left_on="ParentGlobalID",
                                            right_on="GlobalID", suffixes=("_src", "_lk"))
 
+
             #
             # Move field that will be in all stack records to front
             #
@@ -657,27 +661,6 @@ class etl_PINNElephant:
             outDFCountsStack3.loc[mask, 'MatureCode'] = 'ND'
             outDFCountsStack3.loc[mask, 'QCNotes'] = 'Taxon Not Defined: nan'
 
-
-            # 2 - Add Other record with a ND value, count and name in the QC Notes field - When Doing this workflow its
-            # adding duplicate ND Records that are already defined in outDFCountsStack3 - Turning section 2 off -
-            # Kirk 5/1/2026.
-            # outDFCountsStack_NE = outDFCountsStack2[outDFCountsStack2['SpecifyOther'].notna()]
-            #
-            # # Rename 'Other' field to 'Enumeration' and 'DefineOther' to 'MatureCode
-            # outDFCountsStack_NE = outDFCountsStack_NE.rename(columns={'Other': 'Enumeration'})
-            #
-            # # Define a MatureCode value of 'ND' that is not Defined
-            # outDFCountsStack_NE.insert(4, "MatureCode", "ND")
-            #
-            # # Add QCNotes field with the Specify Other value
-            # outDFCountsStack_NE["QCNotes"] = "Taxon Not Defined: " + outDFCountsStack_NE['SpecifyOther']
-            #
-            # # Drop fields DefineOther and SpecifyOther
-            # outDFCountsStack_NE = outDFCountsStack_NE.drop(['DefineOther', 'SpecifyOther'], axis=1)
-            #
-            # # Combine/Append the Other records
-            # combinedOtherDF = pd.concat([outDFCountsStack3, outDFCountsStack_NE], ignore_index=True)
-
             # Combine/Append the initial Stacked Count records in data frame - outDFCountsStack1Melt
             combinedAllCountsDF = pd.concat([outDFCountsStack1Melt, outDFCountsStack3], ignore_index=True)
 
@@ -700,6 +683,8 @@ class etl_PINNElephant:
 
             # Change DEHPUP MatureCode values to HPUP - Added 5/4/2026
             combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].replace('DEHPUP', 'HPUP')
+
+
 
             # After Stacking all the records ready to append the records to 'tblSealCount' - Check for duplicates
             duplicatesDF = combinedAllCountsDF[combinedAllCountsDF.duplicated()]
@@ -746,7 +731,7 @@ class etl_PINNElephant:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - proces_Counts: {e}'
+            logMsg = f'WARNING ERROR  - ETL_PINN_Elephant.py - proces_Counts: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
             sys.exit(1)
@@ -1001,10 +986,25 @@ class etl_PINNElephant:
             # Define the CrossWalk to the Master Event when Multiple/Split Events -
             notMasterEventsFinal = defineXwalkToMaster(outUniqueEventsDF, dmInstance)
 
-            # Update Downstream Tables with Multiple/Split Events to the Master Event - t
+            # Update Downstream Tables with Multiple/Split Events to the Master Event
             tableList = ['tblSealCount', 'tblPhocaSealCount', 'tblResights', 'tblDisturbances',
                     'tblSubSitesNotSurveyed']
             outFun = updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance, tableList)
+
+            ####################################
+            # For Split Tablet events you can have more than 1 MatureCodes for one event across if the Observation Times
+            # are different. E.g Bull at 9:38 - 8 total, and Bull at 9:20 - 9 total. These should be compiled to 17 bull at
+            # 9:20.
+            # To Address this multiple tablet scenario - By event in the Seal Count table
+            # will change all Observation Times to the Events Start Time (i.e. the earliest time).
+            # To insure the 'SealCount' records by event has the same observation time after doing the split event
+            # updates in 'updateToMasterEventID' do one last update specific to tblSealCount
+
+            # Added 5/9/2026
+            ###################################
+
+            updateSealCountObservationSplitEvent(outUniqueEventsDF, etlInstance, dmInstance)
+
 
             # Delete the Not Master Events - these have been migrated
             outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
@@ -1662,7 +1662,7 @@ def uniqueEvents(outDFEvents, etlInstance, dmInstance):
 def consolidateSplitEvents(outUniqueEventsDF, outDFElephantEvents, outDFResightEvents, etlInstance, dmInstance):
 
     """
-    Parent Script for workflow to consolidate/merage the Event tables when multiple tablet data collection.
+    Parent Script for workflow to consolidate/merge the Event tables when multiple tablet data collection.
     Processing tblEvents, tblElephantEvents, and tblResightEvents
 
     Find Min and Max Start Times
@@ -2052,7 +2052,156 @@ def updateToMasterEventID(notMasterEventsFinal, etlInstance, dmInstance, tableLi
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.critical(logMsg, exc_info=True)
         traceback.print_exc(file=sys.stdout)
-        return "Failed"
+        sys.exit(1)
+
+
+def updateSealCountObservationSplitEvent(inDF, etlInstance, dmInstance):
+
+    """
+    For Split Events Update the Seal Count Values to one record for Mature Code. Will have more than one 'ObservatonTime'
+    per life form.  Compile all counts to only the
+     Setting to the Event - Minimum Time so only one record per Mature Code.
+
+    :param inDF - Dataframe with the Master Events - records in tblSealCount with the EventID will be updated.
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    
+
+    :return string: Denoting Success, exit on fail
+    """
+
+    try:
+
+        # Subset to only the Master events with Split Tablet Record Scenario -  and the 'EventID' and 'StartTime' fields
+        eventsDFToUpdate = inDF.loc[
+            (inDF['MasterEvent'] == 'Yes') & (inDF['RecordCount'] >= 2),
+            ['EventID', 'StartTime']
+        ]
+
+        # Rename 'StartTime' to ObservationTime'
+        eventsDFToUpdate = eventsDFToUpdate.rename(columns={'StartTime': 'ObservationTime'})
+
+        # Perform the Update Query
+        # Temporary Table Created for Updated Query Processing
+        tempTable = 'tmpTable_ETL'
+
+        # Create the update SQL Statement
+        update_sql = dm.generalDMClass.build_access_update_sql(df=eventsDFToUpdate, target_table="tblSealCount",
+                                                               source_table=tempTable,
+                                                               join_field="EventID")
+
+        # Create the temp table
+        dm.generalDMClass.createTableFromDF(eventsDFToUpdate, tempTable, etlInstance.inDBBE)
+
+        # Apply the Update Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+
+        # Next Reimport the updated records for the event - and perform the Aggregrate query - then delete the existing
+        # records and append the newly aggregrated records.
+        # In hind sight should have aggregate prior to importing to Access rather then importing then handling the split
+        # events.  Split events only happened starting in the second year hence why this happened.
+
+        inQuery = (
+            "SELECT tblSealCount.SealCountID, tblSealCount.EventID, tblSealCount.LocationID, "
+            "tblSealCount.ObservationTime, tblSealCount.MatureCode, tblSealCount.Qualifier, tblSealCount.QCFlag, "
+            "tblSealCount.Enumeration, tblSealCount.CreatedDate "
+            "FROM tmpTable_ETL "
+            "INNER JOIN tblSealCount ON tmpTable_ETL.EventID = tblSealCount.EventID;"
+        )
+
+        # Import Seal Count Table
+        recordsToAggregate = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Summarize on the all but the 'SealCountID' field.
+        recordsToAggregateNoID = recordsToAggregate.drop(columns=['SealCountID'])
+
+        # Aggregate the 'recordsToAggregateNoID' Data Frame into one record - Sum the Enumeration field value for each
+        # groupby/unique value on the  EventID, LocationID, ObservationTime, MatureCode, Qualifier, QCFlag fields.        #
+        # For 'CreatedDate' use the minimum value for the groupby/unique fields.
+
+        recordsToAggregateAgg = (recordsToAggregateNoID
+        .groupby(
+            [
+                'EventID',
+                'LocationID',
+                'ObservationTime',
+                'MatureCode',
+                'Qualifier',
+                'QCFlag'
+            ],
+            dropna=False,
+            as_index=False
+        )
+        .agg(
+            Enumeration=('Enumeration', 'sum'),
+            CreatedDate=('CreatedDate', 'min')
+        ))
+
+        ############
+        # Delete the Existing Records that are being aggregrated
+        ############
+
+        # Subset to only SealCountID fields
+        recordsBeingAggregated = recordsToAggregate[['SealCountID']]
+
+        # Create the temp table with the DF in the DB
+        dm.generalDMClass.createTableFromDF(recordsBeingAggregated, tempTable, etlInstance.inDBBE)
+
+        # Define the Delete Query
+        update_sql = (f'DELETE tblSealCount.* FROM tblSealCount INNER JOIN tmpTable_ETL ON tblSealCount.SealCountID = '
+                        f'tmpTable_ETL.SealCountID;')
+
+        # Apply the Delete Query to the Access DB using the passed temp table
+        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+
+        # Add note about Deleting Records
+        recCountDeleted = recordsBeingAggregated.shape[0]
+
+        logMsg = f'For Split Event Deleted - {recCountDeleted} - records - from tblSealCount'
+        print(logMsg)
+        logging.info(logMsg)
+
+        ###################################
+        # Lastly Append the new aggregated records
+        ###################################
+
+        cols = recordsToAggregateAgg.columns.tolist()
+
+        recCount = recordsToAggregateAgg.shape[0]
+
+        # Append to table
+        # Build the SQL query dynamically
+        insertQuery = (f"INSERT INTO tblSealCount ({', '.join(cols)}) "
+        f"VALUES ({', '.join(['?'] * len(cols))})")
+
+        # Set all nan to None
+        recordsToAggregateAgg = recordsToAggregateAgg.replace([np.nan, 'nan'], None)
+
+        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+        dm.generalDMClass.appendDataSet(cnxn, recordsToAggregateAgg, "tblSealCount", insertQuery,
+                                                   dmInstance)
+
+        recsAppended = recordsToAggregateAgg.shape[0]
+        logMsg = f'For Split Events just appended - {recsAppended} - Aggregated records - to tblSealCount'
+        print(logMsg)
+        logging.info(logMsg)
+
+        logMsg = f'Successfully Update the Split Event Seal Count Records'
+        logging.info(logMsg)
+        print (logMsg)
+
+        logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
+        logging.info(logMsg)
+
+        return "Success"
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_PINN_ELephant.py - updateSealCountObservationTime: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
         sys.exit(1)
 
 
