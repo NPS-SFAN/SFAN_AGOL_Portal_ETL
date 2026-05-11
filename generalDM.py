@@ -235,6 +235,7 @@ class generalDMClass:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
 
 
@@ -395,6 +396,7 @@ class generalDMClass:
         except Exception as e:
             print(f"An error occurred in execute query {e}")
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
         finally:
             # Close the database and quit Access
@@ -580,6 +582,7 @@ class generalDMClass:
 
         except Exception as e:
             print(f"An error occurred: {e}")
+            sys.exit(1)
 
     def unZipZip(zipPath, outName, outDir):
         """
@@ -708,6 +711,7 @@ class generalDMClass:
             logMsg = f'WARNING ERROR - "Exiting Error appendDataSet: {e}'
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.__stdout__ )
+            sys.exit(1)
 
     def appendDataSetwDic(cnxn, dfToAppend, appendToTable, fieldTypeDic, insertQuery, dmInstance):
 
@@ -766,6 +770,7 @@ class generalDMClass:
             generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def applyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
         """
@@ -828,6 +833,7 @@ class generalDMClass:
             generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def defineFieldTypesDF(dmInstance, fieldTypeDic, inDF):
         """
@@ -891,6 +897,7 @@ class generalDMClass:
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     def nan_to_none(x):
         """
