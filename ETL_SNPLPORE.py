@@ -672,7 +672,7 @@ class etl_SNPLPORE:
             outDFChickOnlywNest.insert(6, 'BandCombination', None)
 
             # Concatenate Left and Right Leg
-            outDFChickOnlywNest['BandCombination'] = (outDFChickOnlywNest['Left_Leg'] + ';' +
+            outDFChickOnlywNest['BandCombination'] = (outDFChickOnlywNest['Left_Leg'] + ':' +
                                                       outDFChickOnlywNest['Right_Leg'])
 
             # Drop Fields Left_Leg and Right_Leg
