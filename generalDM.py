@@ -165,7 +165,6 @@ class generalDMClass:
         try:
             queryDf = pd.read_sql(query, cnxn)
 
-
         except Exception as e:
 
             # Check if 'queryDf' imported try and import via ODBC cursor
@@ -669,14 +668,25 @@ class generalDMClass:
             # Iterate over each row in the DataFrame and insert it into the table
             for index, row in dfToAppend.iterrows():
                 values = tuple(row)
-                cursor.execute(insertQuery, values)
 
-                rows_inserted += 1
+                try:
+                    cursor.execute(insertQuery, values)
+                    rows_inserted += 1
+                    logMsg = f'Appended Records: {values}'
+                    logging.info(logMsg)
+                    # Commit the changes to the database
+                    cnxn.commit()
 
-                logMsg = f'Appended Records: {values}'
-                logging.info(logMsg)
-                # Commit the changes to the database
-                cnxn.commit()
+                except Exception as e:
+                    print("FAILED ROW:", row)
+                    print(dfToAppend.iloc[index])
+                    bad_row = dfToAppend.iloc[index]
+
+                    for col, val in bad_row.items():
+                        print(col, val, type(val))
+
+
+                    raise e
 
             # Close the cursor and database connection
             cursor.close()
