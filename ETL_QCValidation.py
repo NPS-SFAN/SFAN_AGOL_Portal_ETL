@@ -54,7 +54,7 @@ class etlInstance_QC:
         try:
 
             # Iterate through the fields to be QC validated - New 2/9/2026 - Needs to be tested
-            outDF = inDF  # start with the original
+            outDF = inDF.copy()  # start with the original
             changed_any = False  # track whether anything changed
 
             for field in qcValidationFields:
@@ -77,7 +77,7 @@ class etlInstance_QC:
 
                 # only version if something actually changed
                 if changed:
-                    outDF = outDF_new
+                    outDF = outDF_new.copy()
                     changed_any = True
 
             return outDF
@@ -230,8 +230,11 @@ class etlInstance_QC:
         InDF["LengthCategoryID_Lookup"] = InDF["LengthCategoryID_Lookup"].where(
             InDF["LengthCategoryID_Lookup"].notna(), None)
 
-        # Convert all nan to None
-        InDF = InDF.replace([np.nan, 'nan'], None)
+        # Updating to use where rather then 'replace' logic - 20260610
+        InDF = InDF.where(
+            pd.notnull(InDF),
+            None
+        )
 
         return InDF
 
@@ -256,6 +259,8 @@ class etlInstance_QC:
 
         try:
 
+            inDF = inDF.copy()
+
             # Variables to push if QC validation fails
             inDF['FishWeight_QC'] = inDF["TotalWeight"] - inDF["BagWeight"]
             inDF['FishWeight_Dif'] = inDF["FishWeight"] - inDF["FishWeight_QC"]
@@ -306,6 +311,9 @@ class etlInstance_QC:
                 inDF = inDF.drop(columns=['FishWeight_QC', 'FishWeight_Dif'])
 
             else:
+                # Drop the 'FishWeight_QC' and 'FishWeight_Dif' fields
+                inDF = inDF.drop(columns=['FishWeight_QC', 'FishWeight_Dif'])
+
                 logMsg = (f'No Updates - for {field} records in '
                           f'- {etlInstance.protocol} - QC validation - qc_FishWeight')
 
@@ -343,6 +351,8 @@ class etlInstance_QC:
 
         try:
 
+            inDF = inDF.copy()
+
             # Variables to push if QC validation fails
             inDF['FishWeight_QC'] = inDF["TotalWeight"] - inDF["BagWeight"]
             inDF['FishWeight_Dif'] = inDF["FishWeight"] - inDF["FishWeight_QC"]
@@ -396,16 +406,19 @@ class etlInstance_QC:
                 logMsg = (f'No Updates - for {field} records in '
                           f'- {etlInstance.protocol} - QC validation - qc_FishWeight')
 
+                # Drop the 'FishWeight_QC' and 'FishWeight_Dif' fields
+                inDF = inDF.drop(columns=['FishWeight_QC', 'FishWeight_Dif'])
+
                 dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
                 logging.info(logMsg)
+
+                changed = False
 
             return inDF, changed
 
         except Exception as e:
 
-            logMsg = f'ERROR - ETL_QCValidation - qc_LengthCategoryID: {e}'
+            logMsg = f'ERROR - ETL_QCValidation - qc_FishWeight: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg)
             traceback.print_exc(file=sys.stdout)
-
-
