@@ -435,7 +435,10 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         inObsOther['Other'] = inObsOther['Other'].astype(str)
 
         # Retain only records with Other to be defined
-        inDFOthersSubset = inObsOther[inObsOther['Other'] != 'nan']
+        inDFOthersSubset = inObsOther[
+            (~inObsOther['Other'].isin(['nan', 'None'])) &
+            (inObsOther['Other'].notna())
+            ]
 
         numberRecords = inDFOthersSubset.shape[0]
 
@@ -457,7 +460,12 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
             # Insert 'OBSCODE to be defined
             inDFOthersParsed3.insert(1, "OBSCODE", None)
 
-            inDFOthersParsed3 = inDFOthersParsed3.replace([np.nan, 'nan', 'None'], None)
+            # Changing from replace to where syntax due to errors with replace  - 6/10/2026
+            inDFOthersParsed3 = inDFOthersParsed3.where(
+                pd.notnull(inDFOthersParsed3),
+                None
+            )
+
 
             # Retain only records that aren't null
             inDFOthersParsed3_subset = inDFOthersParsed3[inDFOthersParsed3['Observers'].notnull()]
@@ -513,7 +521,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
 
-            outPath = f'{etlInstance.outDir}\RecordsSalmonids_Electro_NoDefinedContact.csv'
+            outPath = f'{etlInstance.outDir}\RecordsSalmonids_NoDefinedContact.csv'
             if os.path.exists(outPath):
                 os.remove(outPath)
 
@@ -692,20 +700,55 @@ def process_Measurements(inDF, etlInstance, dmInstance):
         inDFAppend_postQCVal = etlQC.etlInstance_QC.process_ETLValidation(etlInstance, dmInstance, inDFAppend2,
                                                                           qcValidationFields)
 
-        insertQuery = (f'INSERT INTO tblSmoltMeasurements (EventID, SpeciesCode, LifeStage, FishTally, ForkLength, '
-                       f'LengthCategoryID, TotalWeight, BagWeight, FishWeight, NewRecaptureCode, PITTag, MarkColor, '
-                       f'PriorSeason, Injured, Dead, Scales, Tissue, EnvelopeID, Comments, QCFlag, QCNotes, CreatedDate)'
-                       f' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        # Convert LengthCategoryID to Integer from Object
+        inDFAppend_postQCVal['LengthCategoryID'] = pd.to_numeric(inDFAppend_postQCVal['LengthCategoryID'],
+                                                                 errors='coerce').astype('Int64')
+        # Clean Up Yes No fields
+        yesno_cols = ['Injured', 'Dead', 'Scales', 'Tissue', 'PriorSeason']
+
+        for col in yesno_cols:
+            inDFAppend_postQCVal[col] = (
+                inDFAppend_postQCVal[col]
+                .astype(str).str.strip().str.lower()
+                .map({
+                    'yes': True,
+                    'y': True,
+                    'true': True,
+                    '1': True,
+                    'no': False,
+                    'n': False,
+                    'false': False,
+                    '0': False
+                })
+            )
+
+        # Convert Object Fields to Numeric
+        num_cols = [
+            'EventID', 'FishTally', 'ForkLength', 'LengthCategoryID',
+            'TotalWeight', 'BagWeight', 'FishWeight'
+        ]
+
+        for col in num_cols:
+            inDFAppend_postQCVal[col] = pd.to_numeric(inDFAppend_postQCVal[col], errors='coerce')
+
+        # One final time clean up all null values to None
+        inDFAppend_postQCVal2 = inDFAppend_postQCVal.replace([np.nan, 'nan'], None)
+
+        # Build the SQL query dynamically
+        cols = inDFAppend_postQCVal2.columns.tolist()
+
+        insertQuery = (f"INSERT INTO tblSmoltMeasurements ({', '.join(cols)}) "
+                       f"VALUES ({', '.join(['?'] * len(cols))})")
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         # Append the Contacts to the xref_EventContacts table
-        dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal, "tblSmoltMeasurements", insertQuery,
+        dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal2, "tblSmoltMeasurements", insertQuery,
                                         dmInstance)
 
         logMsg = f"Success ETL_Salmonids_Smolts.py - process_Measurements."
         logging.info(logMsg)
 
-        return inDFAppend2
+        return inDFAppend_postQCVal2
 
     except Exception as e:
 
@@ -734,8 +777,8 @@ def process_Counts(inDF, etlInstance, dmInstance):
     try:
 
         # Calculate the UnmeasuredLive and Unmeasured Dead fields
-        inDF['UnmeasuredLive'] = np.where(inDF['Dead'] == False, inDF['FishTally'], 0)
-        inDF['UnmeasuredDead'] = np.where(inDF['Dead'] == True, inDF['FishTally'], 0)
+        inDF['UnmeasuredLive'] = np.where(inDF['Dead'] == 'False', inDF['FishTally'], 0)
+        inDF['UnmeasuredDead'] = np.where(inDF['Dead'] == 'True', inDF['FishTally'], 0)
 
         inDFAppend = inDF[['EventID', 'SpeciesCode', 'LifeStage', 'Comments', 'QCFlag', 'QCNotes',
                            'CreatedDate', 'UnmeasuredLive', 'UnmeasuredDead']]
@@ -747,19 +790,41 @@ def process_Counts(inDF, etlInstance, dmInstance):
         # Set where record have a LifeStage value of None to "NA" - added 6/4/2025
         inDFFiltered['LifeStage'] = inDFFiltered['LifeStage'].fillna('NA')
 
-        insertQuery = (f'INSERT INTO tblSmoltUnmeasured (EventID, SpeciesCode, LifeStage, Comments, QCFlag, QCNotes,'
-                       f'CreatedDate, UnmeasuredLive, UnmeasuredDead) VALUES'
-                       f' (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        #####
+        # Summarize by EventID, SpeciesCode, LifeStage, and QCFlag  - Sum the UnmeasuredLive and UnmeasuredDead so only
+        # one record per EventID, SpeciesCode, LifeStage, and QCFlag to avoid duplicates. Some times measurement at Traps
+        # are done twice a day under the same EventID/Survey - Logic Added 6/11/2026
+        #####
+
+        inDF_grouped = (
+            inDFFiltered
+            .groupby(['EventID', 'SpeciesCode', 'LifeStage', 'QCFlag'], dropna=False)
+            .agg({
+                'UnmeasuredLive': 'sum',
+                'UnmeasuredDead': 'sum',
+                'Comments': concat_comments
+            })
+            .reset_index()
+        )
+
+        # Clean up all null values to None
+        inDF_grouped = inDF_grouped.replace([np.nan, 'nan'], None)
+
+        # Build the SQL query dynamically
+        cols = inDF_grouped.columns.tolist()
+
+        insertQuery = (f"INSERT INTO tblSmoltUnmeasured ({', '.join(cols)}) "
+                       f"VALUES ({', '.join(['?'] * len(cols))})")
 
         cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
         # Append the Contacts to the xref_EventContacts table
-        dm.generalDMClass.appendDataSet(cnxn, inDFFiltered, "tblSmoltUnmeasured", insertQuery,
+        dm.generalDMClass.appendDataSet(cnxn, inDF_grouped, "tblSmoltUnmeasured", insertQuery,
                                         dmInstance)
 
         logMsg = f"Success ETL_Salmonids_Smolts.py - process_Counts."
         logging.info(logMsg)
 
-        return inDFFiltered
+        return inDF_grouped
 
     except Exception as e:
 
@@ -770,3 +835,18 @@ def process_Counts(inDF, etlInstance, dmInstance):
 
 def truncate_to_2_decimal(x):
     return np.floor(x * 100) / 100 if pd.notnull(x) else x
+
+
+def concat_comments(x):
+    cleaned = (
+        x.dropna()
+         .astype(str)
+         .str.strip()
+    )
+
+    cleaned = cleaned[cleaned != '']
+
+    if cleaned.empty:
+        return None
+
+    return ' | '.join(cleaned)
