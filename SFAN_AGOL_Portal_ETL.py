@@ -15,10 +15,13 @@ to download Feature Layers I own).   Conversely, when VPN connected at home the 
 As of 8/27/2024 - Snowy Plover PORE ETL workflow has been developed - KRS
 As of 10/23/2024 - Salmonids ElecrtoFishing ETL workflow has been developed - KRS
 As of 3/25/2025 - PCM ETL of Location Manual Information to Portal developed - KRS
-As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed - Updates in Process 3/27/2026 for split events.
-As of 6/3/2025 - Salmonids Smolts ETL workflow developed - KRS
+As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed. May 2026 Updates made to handle Split Events.
+As of 6/3/2025 - Salmonids Smolts ETL workflow developed - 6/10/2026 - updated Counts to summarize by EventID, Species,
+Lifeform to summarize when multiple surveys at trap on the same day/event.  Additionally updates to handle QC Validation
+ for 'LengthCategoryID', 'FishWeight' validations.
 
 Output:
+Imported data from Survey 123 AGOL/Portal Feature Layers.
 
 Python Environment: arcgispro-py3-entra2 - Python 3.11, clone of the ArcGISPro 3.3 environment in entra for ArcPY
 Note pywin 32 was imported into the Arcgis pro clone
@@ -47,10 +50,10 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol/Item Being Processes
-protocol = 'PINN-Elephant'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
+protocol = 'Salmonids-Smolts'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing\PinnipedBE_20260424_Testing - Copy.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing\PinnipedFE_20260424_Testing.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20260610.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_FE_20260504.accdb'
 
 # Year Being Processed
 inYear = 2026
@@ -62,13 +65,13 @@ inYear = 2026
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "3366661c659b44029119c690a6b88f5e"
+layerID = "f83d9b67324144abacd17df69bc763b7"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id. Note AGOL and Portal
 # have separate OAuth2.0 values.
-pythonApp_ID = 'xxxxx'   # If not using define as 'na' ('client ID'|'na')
+pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
 #################################
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
@@ -77,7 +80,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Testing'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2026\Smolt'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
