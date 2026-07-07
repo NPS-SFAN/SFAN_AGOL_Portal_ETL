@@ -19,6 +19,7 @@ As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed. May 2026 Updat
 As of 6/3/2025 - Salmonids Smolts ETL workflow developed - 6/10/2026 - updated Counts to summarize by EventID, Species,
 Lifeform to summarize when multiple surveys at trap on the same day/event.  Additionally updates to handle QC Validation
  for 'LengthCategoryID', 'FishWeight' validations.
+As of 6/22/2026 - Northern Spotted Owl ETL workflow - In Development
 
 Output:
 Imported data from Survey 123 AGOL/Portal Feature Layers.
@@ -50,10 +51,10 @@ import log_config
 logger = logging.getLogger(__name__)
 
 # Protocol/Item Being Processes
-protocol = 'Salmonids-Smolts'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant)
+protocol = 'NSOW'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant|NSOW)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_BE_20260610.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\Database\SFAN_Salmonids_DB_FE_20260504.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_Master_BE_20260306 - Copy.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260414.accdb'
 
 # Year Being Processed
 inYear = 2026
@@ -65,13 +66,13 @@ inYear = 2026
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "f83d9b67324144abacd17df69bc763b7"
+layerID = "54cff42ed5ce4cbaad748c971bdd8a12"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id. Note AGOL and Portal
 # have separate OAuth2.0 values.
-pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
+pythonApp_ID = 'xxxxxxxx'   # If not using define as 'na' ('client ID'|'na')
 #################################
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
@@ -80,7 +81,7 @@ from datetime import datetime
 dateNow = datetime.now().strftime('%Y%m%d')
 # Output Name, OutDir, Workspace and Logfile Name
 outName = f'{protocol}_{inYear}_{dateNow}'  # Output name for excel file and logile
-outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Salmonids\Natural\_Fish\Salmonids\Data\ETL\2026\Smolt'  # Directory Output Location
+outDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026'  # Directory Output Location
 
 # Variable defines if the AGOL Feature layers needs to be downloaded, if 'No' then you are doing development and do not
 # want/need to download each run of script, Hard Coded paths will need to be updated in the 'ArcGIS_API.py' -
