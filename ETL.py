@@ -13,6 +13,7 @@ import ETL_Salmonids_Smolts as SSmolt
 import ETL_PCM_LocationsManualParking as PCMLOC
 import ETL_PINN_Elephant as PElephant
 import ETL_QCValidation as etlQC
+import ETL_NSOW as nsow
 
 class etlInstance:
     # Class Variables
@@ -89,6 +90,10 @@ class etlInstance:
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
                 outETL = PElephant.etl_PINNElephant.process_PINNElephant(outDFDic, etlInstance, dmInstance,
                                                                          generalArcGIS)
+            # ELT Routine Northern Spotted Owl
+            elif etlInstance.protocol.lower() == 'nsow':
+                outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
+                outETL = nsow.etl_NSOW.process_ETLNSOW(outDFDic, etlInstance, dmInstance, generalArcGIS)
 
             # PCM Plot Locations Manual
             elif etlInstance.protocol.lower() == 'pcm-locationsmanual':
