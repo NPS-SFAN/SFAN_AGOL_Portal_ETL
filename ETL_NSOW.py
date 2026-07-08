@@ -10,6 +10,7 @@ import traceback
 import generalDM as dm
 import logging
 import inspect
+import pandas as pd
 
 
 class etl_NSOW:
@@ -52,18 +53,31 @@ class etl_NSOW:
 
             outDFEventSurvey = etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
+            ####
+            # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4  - TO DO
+            ####
 
+            etl_NSOW.processMouseOffer(outDFEventSurvey)
 
+            ####
+            # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5 - TO DO
+            # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
+            ####
 
+            etl_NSOW.processInventoryCall(outDFEventSurvey)
 
+            ######
+            # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
+            # Nest Tree Survey - To Be Developed
+            ######
 
-
+            outDFNewTreeNest = etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - To Be Developed
             ######
 
-            outDFEventSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
+            outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
 
 
 
@@ -114,28 +128,41 @@ class etl_NSOW:
                     break
 
 
-            # STOPPED HERE 7/7/2026
-
             # Subset to Only the 'Monitoring Survey' events -
-            outDFSubset = inDF[inDF['Event Type'] == 'MonitoringSurvey']
+            outDFSubsetInitial = inDF[inDF['Event Type'] == 'MonitoringSurvey']
 
 
             # Create initial dataframe subset
-            outDFSubset = outDFSubset[['GlobalID', 'EventPurposeID',
-                                'CreationDate', 'Creator']].rename(
-                columns={'CreationDate': 'CreatedDate',
+            outDFSubset = outDFSubsetInitial[['GlobalID', 'EventPurposeID', 'ProtocolConfigurationID', 'EventDate',
+                                       'EventStartTime', 'EventEndTime', 'IsOwlCallSimulated', 'CallStartTime', 'CallMethodID',
+                                              'SiteID', 'WindTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
+                                              'LightTypeID', 'Narrative', 'IsEffortToSeeBands', 'IsWereOwlsBanded',
+                                              'IsMousingPerformed', 'MousePurposeID', 'IsNestViewAdequate', 'EvidenceID',
+                                              'NonNestingIndicatorID', 'NestingIndicatorID', 'ReproductionID',
+                                              'CreationDate', 'Creator', 'OrganizationID']].rename(
+                columns={'SiteID': 'SiteName',
+                    'CreationDate': 'CreatedDate',
                          'Creator': 'CreatedBy'})
 
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
             # To DateTime Field
-            outDFSubset['Start_Date'] = pd.to_datetime(outDFSubset['Start_Date'])
+            outDFSubset['EventDate'] = pd.to_datetime(outDFSubset['EventDate'])
             # Format to m/d/yyy
-            outDFSubset['Start_Date'] = outDFSubset['Start_Date'].dt.strftime('%m/%d/%Y')
+            outDFSubset['EventDate'] = outDFSubset['EventDate'].dt.strftime('%m/%d/%Y')
+
+            fieldLen = outDFSubset.shape[1]
 
             # Insert 'DataProcesingLevelID' = 1
             outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
+
+
+            # Owl Call Simulated if yes set to 1 else 0.
+            outDFSubset['IsOwlCallSimulated'] = (
+                    outDFSubset['IsOwlCallSimulated'].str.strip().str.lower() == 'yes'
+            ).astype(int)
+
 
             # Insert 'dataProcesingLevelDate
             from datetime import datetime
@@ -145,65 +172,79 @@ class etl_NSOW:
             # Insert 'dataProcesingLevelUser
             outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
 
-            #####################################
-            # Define Location_Id via lookup table
-            #####################################
+            # Define SiteID
 
-            # Read in the Lookup Table
-            inQuery = f"Select * FROM tbl_Locations';"
+            # Import the refSite lookup
+            inQuery = f"SELECT refSite.ID, refSite.SiteName FROM refSite;"
 
-            outDFLookup = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
-            # Perform the lookup to field 'Location_ID'
+            outDFrefSite = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-            outDF_Step2 = pd.merge(outDFSubset, outDFLookup[['Loc_Name', 'Location_ID']], how='left',
-                                   left_on="Survey Location", right_on="Loc_Name", suffixes=("_src", "_lk"))
+            # Define the SiteID via lookup in refSite table - SiteName to ID
+            site_lookup = outDFrefSite.set_index('SiteName')['ID']
+            outDFSubset['SiteID'] = outDFSubset['SiteName'].map(site_lookup)
 
-            # Drop field "Survey Location
-            outDF_Step2 = outDF_Step2.drop(columns=['Survey Location', 'Loc_Name'])
+            ### MousePurposeID - If 'IsMousingPerformed' is no (i.e. 2) set 'MousePurposeID' to 4 - No Mousing
+            outDFSubset.loc[outDFSubset['IsMousingPerformed'] == 2, 'MousePurposeID'] = 4
 
-            ############################
-            # Define desired field types
-            ############################
+            ########
+            # Append to tbl_EventSurvey
+            ########
 
-            # Dictionary with the list of fields in the dataframe and desired pandas dataframe field type
-            # Note if the Seconds are not in the import then omit in the 'DateTimeFormat' definitions
-            fieldTypeDic = {
-                'Field': ["Event_ID", "Location_ID", "Protocol_Name", "Start_Date", "Start_Time", "End_Time",
-                          "Created_Date", "Created_By", "DataProcessingLevelID", "DataProcessingLevelDate",
-                          "DataProcessingLevelUser"],
-                'Type': ["object", "object", "object", "datetime64", "datetime64", "datetime64",
-                         "datetime64", "object", "int64", "DataProcessingLevelDate",
-                         "object"],
-                'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "%H:%M", "%H:%M",
-                                   "%m/%d/%Y %I:%M:%S %p", "na", "na", "na",
-                                   "na"]}
-
-            outDFSurvey = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDF_Step2)
-
-            # Append outDFSurvey to 'tbl_Events'
             # Pass final Query to be appended
 
             # Grab all column names from the dataframe
-            cols = outDFSurvey.columns.tolist()
+            cols = outDFSubset.columns.tolist()
 
             # Build the SQL query dynamically
             insertQuery = (
-                f"INSERT INTO tbl_Events ({', '.join(cols)}) "
+                f"INSERT INTO tbl_EventSurvey ({', '.join(cols)}) "
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEvents", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSubset, "tblEvents", insertQuery, dmInstance)
 
+            ####
+            # Function to Populate the tblMonitoringOwlCall - TO DO
+            ####
 
+            # List of Fields to retain
+            fieldList = ['GlobalID', 'CallStartTime', 'CallMethodID']
 
+            etl_NSOW.processMonitoringOwlCall(fieldList, outDFSubset)
 
+            ####
+            # Function to Populate the tblWeather table - TO DO
+            ####
 
+            # List of Fields to retain
+            fieldList = ['GlobalID', 'WindyTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
+                         'LightTypeID']
+
+            etl_NSOW.processWeather(fieldList, outDFSubset)
+
+            ####
+            # Function to Populate the tblEvidence table - TO DO
+            ####
+
+            # List of Fields to retain
+            fieldList = ['GlobalID', 'EvidenceID']
+
+            etl_NSOW.processEvidence(fieldList, outDFSubset)
+
+            ####
+            # Function to Populate the tblStatusIndicators table - TO DO
+            ####
+
+            # List of Fields to retain
+            fieldList = ['NonNestingIndicatorID', 'NestingIndicatorID', 'ReproductionID']
+
+            etl_NSOW.processStatusIndicators(fieldList, outDFSubset)
 
 
 
 
             func_name = inspect.currentframe().f_code.co_name
-            logMsg = f"Success ETL Survey/Event Form ETL_SNPLPORE.py - {func_name}"
+            logMsg = f"Success ETL Survey/Event Form ETL_NSOW.py - {func_name}"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 

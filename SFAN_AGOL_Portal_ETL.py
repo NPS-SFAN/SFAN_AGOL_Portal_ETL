@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'NSOW'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant|NSOW)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_Master_BE_20260306 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_Master_BE_20260708 - copy.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260414.accdb'
 
 # Year Being Processed
