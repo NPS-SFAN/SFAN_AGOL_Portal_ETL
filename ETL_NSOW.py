@@ -68,7 +68,7 @@ class etl_NSOW:
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
-            # Nest Tree Survey - To Be Developed
+            # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed - To Be Developed
             ######
 
             outDFNewTreeNest = etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
@@ -80,12 +80,7 @@ class etl_NSOW:
             outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
 
 
-
-
-
-
-
-
+            # Nest Survey Observervations go to table - 'tblNestTreeFeatures' -
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f"Success ETL_SNPLPORE.py - {func_name}"
@@ -190,40 +185,42 @@ class etl_NSOW:
             # Append to tbl_EventSurvey
             ########
 
-            # Pass final Query to be appended
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            inDFAppend['MergedDate'] = now
 
             # Grab all column names from the dataframe
             cols = outDFSubset.columns.tolist()
 
             # Build the SQL query dynamically
             insertQuery = (
-                f"INSERT INTO tbl_EventSurvey ({', '.join(cols)}) "
+                f"INSERT INTO tblEventSurvey ({', '.join(cols)}) "
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSubset, "tblEvents", insertQuery, dmInstance)
 
             ####
-            # Function to Populate the tblMonitoringOwlCall - TO DO
+            # Function to Populate the tblMonitoringOwlCal - Check
             ####
 
             # List of Fields to retain
             fieldList = ['GlobalID', 'CallStartTime', 'CallMethodID']
 
-            etl_NSOW.processMonitoringOwlCall(fieldList, outDFSubset)
+            etl_NSOW.processMonitoringOwlCall(fieldList, outDFSubset, dmInstance)
 
             ####
-            # Function to Populate the tblWeather table - TO DO
+            # Function to Populate the tblWeather table - Check
             ####
 
             # List of Fields to retain
             fieldList = ['GlobalID', 'WindyTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
                          'LightTypeID']
 
-            etl_NSOW.processWeather(fieldList, outDFSubset)
+            etl_NSOW.processWeather(fieldList, outDFSubset, dmInstance)
 
             ####
-            # Function to Populate the tblEvidence table - TO DO
+            # Function to Populate the tblEvidence table - Check
             ####
 
             # List of Fields to retain
@@ -240,12 +237,8 @@ class etl_NSOW:
 
             etl_NSOW.processStatusIndicators(fieldList, outDFSubset)
 
-
-
-
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f"Success ETL Survey/Event Form ETL_NSOW.py - {func_name}"
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
             # Returning the Dataframe survey which was pushed to 'tbl_Events, will be used in subsequent ETL.
@@ -254,7 +247,172 @@ class etl_NSOW:
         except Exception as e:
 
             func_name = inspect.currentframe().f_code.co_name
-            logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - {func_name}: {e}'
-            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
 
+    def processMonitoringOwlCall(fieldList, inDF, dmInstance):
+        """
+        ETL to process the tblMonitoringOwl tables attributes
+
+        :param fieldList - 'List of fields to be processed in the 'inDF' dataframe
+        :param inDF - data frame being processed
+        :param dmInstance: Data Management instance:
+
+        :return
+        """
+
+        try:
+
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            #Subset to the fieldList
+            inDFSubset = inDF[[col for col in fieldList if col in inDF.columns]]
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' field
+            inDFAppend = inDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'EventSurveyID']],
+                on='GlobalID',
+                how='left')
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            inDFAppend['MergedDate'] = now
+
+            # Grab all column names from the dataframe
+            cols = inDFAppend.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tbl_EventSurvey ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppend, "tblEvents", insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def processWeather(fieldList, inDF, dmInstance):
+        """
+        ETL to process the tblWeather table attributes
+
+        :param fieldList - 'List of fields to be processed in the 'inDF' dataframe
+        :param inDF - data frame being processed
+        :param dmInstance: Data Management instance:
+
+        :return
+        """
+
+        try:
+
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            #Subset to the fieldList
+            inDFSubset = inDF[[col for col in fieldList if col in inDF.columns]]
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' field
+            inDFAppend = inDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'EventSurveyID']],
+                on='GlobalID',
+                how='left')
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            inDFAppend['MergedDate'] = now
+
+            # Grab all column names from the dataframe
+            cols = inDFAppend.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblWeather ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppend, "tblEvents", insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def processEvidence(fieldList, inDF, dmInstance):
+        """
+        ETL to process the tblEvidence table attributes. Exploding the multi-select comma delimited field into a stacked
+        format.
+
+        :param fieldList - 'List of fields to be processed in the 'inDF' dataframe
+        :param inDF - data frame being processed
+        :param dmInstance: Data Management instance:
+
+        :return
+        """
+
+        try:
+
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            #Subset to the fieldList
+            inDFSubset = inDF[[col for col in fieldList if col in inDF.columns]]
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' field
+            inDFAppend = inDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'EventSurveyID']],
+                on='GlobalID',
+                how='left')
+
+            # Explode to stacked format
+            inDFEvidence = (
+                inDFAppend
+                .assign(EvidenceID=inDFAppend['EvidenceID'].fillna('').str.split(r'\s*,\s*'))
+                .explode('EvidenceID', ignore_index=True)
+            )
+
+            # Optionally remove blank EvidenceID values
+            inDFEvidence = inDFEvidence[inDFEvidence['EvidenceID'] != '']
+
+            #Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            inDFEvidence['MergedDate'] = now
+
+            # Grab all column names from the dataframe
+            cols = inDFAppend.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblEvidence ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFEvidence, "tblEvents", insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
