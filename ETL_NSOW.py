@@ -11,6 +11,7 @@ import generalDM as dm
 import logging
 import inspect
 import pandas as pd
+import numpy as np
 
 
 class etl_NSOW:
@@ -77,10 +78,13 @@ class etl_NSOW:
             # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - To Be Developed
             ######
 
+            # Nest Survey Observervations go to table - 'tblNestTreeFeatures' -
             outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
 
+            # Process Nest Survey Observations in the 'obserfversrepeatnestsurvey' table - starting in 2026v1.3
 
-            # Nest Survey Observervations go to table - 'tblNestTreeFeatures' -
+
+
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f"Success ETL_SNPLPORE.py - {func_name}"
@@ -130,11 +134,13 @@ class etl_NSOW:
             # Create initial dataframe subset
             outDFSubset = outDFSubsetInitial[['GlobalID', 'EventPurposeID', 'ProtocolConfigurationID', 'EventDate',
                                        'EventStartTime', 'EventEndTime', 'IsOwlCallSimulated', 'CallStartTime', 'CallMethodID',
-                                              'SiteID', 'WindTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
-                                              'LightTypeID', 'Narrative', 'IsEffortToSeeBands', 'IsWereOwlsBanded',
+                                              'SiteID', 'WindTypeID', 'PercipitationTypeID', 'LightTypeID',
+                                              'Temperature_F', 'CloudsPercentage',
+                                              'Narrative', 'IsEffortToSeeBands', 'IsWereOwlsBanded',
                                               'IsMousingPerformed', 'MousePurposeID', 'IsNestViewAdequate', 'EvidenceID',
                                               'NonNestingIndicatorID', 'NestingIndicatorID', 'ReproductionID',
-                                              'CreationDate', 'Creator', 'OrganizationID']].rename(
+                                              'CreationDate', 'Creator', 'OrganizationID'
+                                              ]].rename(
                 columns={'SiteID': 'SiteName',
                     'CreationDate': 'CreatedDate',
                          'Creator': 'CreatedBy'})
@@ -165,10 +171,9 @@ class etl_NSOW:
             outDFSubset.insert(fieldLen + 1, "DataProcessingLevelDate", dateNow)
 
             # Insert 'dataProcesingLevelUser
-            outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUser", etlInstance.inUser)
+            outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUserID", etlInstance.inUser)
 
             # Define SiteID
-
             # Import the refSite lookup
             inQuery = f"SELECT refSite.ID, refSite.SiteName FROM refSite;"
 
@@ -178,19 +183,65 @@ class etl_NSOW:
             site_lookup = outDFrefSite.set_index('SiteName')['ID']
             outDFSubset['SiteID'] = outDFSubset['SiteName'].map(site_lookup)
 
+            # Drop SiteName post definition of SiteID
+            outDFSubset =outDFSubset.drop(columns=['SiteName'])
+
+
             ### MousePurposeID - If 'IsMousingPerformed' is no (i.e. 2) set 'MousePurposeID' to 4 - No Mousing
             outDFSubset.loc[outDFSubset['IsMousingPerformed'] == 2, 'MousePurposeID'] = 4
+
+            ## Set float fields to Integer
+            fieldListToInt = ['IsEffortToSeeBands', 'IsWereOwlsBanded', 'IsMousingPerformed', 'MousePurposeID', 'IsNestViewAdequate',
+                              'OrganizationID', 'EventPurposeID', 'ProtocolConfigurationID']
+
+            cols = [c for c in fieldListToInt if c in outDFSubset.columns]
+            outDFSubset[cols] = df[cols].astype('Int64')
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            outDFSubset = outDFSubset.replace([np.nan, 'nan'], None)
+
+            # If field IsNestViewAdquqate is null set to 5 (i.e Not Recorded - NR)
+            outDFSubset['IsNestViewAdequate'] = outDFSubset['IsNestViewAdequate'].fillna(5).astype('Int64')
 
             ########
             # Append to tbl_EventSurvey
             ########
+            ## Remove Fields that aren't in event survey table
+
+            fieldListDrop = ['CallStartTime', 'CallMethodID', 'WindTypeID', 'PercipitationTypeID',
+                             'Temperature_F', 'CloudsPercentage', 'LightTypeID', 'EvidenceID', 'NonNestingIndicatorID',
+                             'NestingIndicatorID', 'ReproductionID']
+
+            outDFSubset2 = outDFSubset.drop(columns=fieldListDrop, errors='raise')
 
             # Add 'MergedDate' field with date/time now
             now = datetime.now()
-            inDFAppend['MergedDate'] = now
+            iso_date = now.strftime("%Y-%m-%d")
+            outDFSubset2['MergedDate'] = iso_date
+
+
+            ###Check for Duplicates prior to appending Unique on fields:
+            uniqueFieldsList = ['EventDate', 'SiteID', 'OrganizationID', 'EventStartTime']
+
+            duplicatesDF = outDFSubset2[outDFSubset2.duplicated(subset=uniqueFieldsList, keep=False)]
+
+            if duplicatesDF.shape[0] > 0:
+
+                outPath = f'{etlInstance.outDir}\Duplicates_MonitoringSurveys.csv'
+                if os.path.exists(outPath):
+                    os.remove(outPath)
+
+                duplicatesDF.to_csv(outPath, index=True)
+
+                msgLog = f'WARNING Duplicate Monitoring Survey Records - see export - {outPath} - Exiting Script'
+                logging.critical(msgLog, exc_info=True)
+                print (msgLog)
+
+                sys.exit(1)
+
 
             # Grab all column names from the dataframe
-            cols = outDFSubset.columns.tolist()
+            cols = outDFSubset2.columns.tolist()
 
             # Build the SQL query dynamically
             insertQuery = (
@@ -198,26 +249,25 @@ class etl_NSOW:
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFSubset, "tblEvents", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSubset2, "tblEvents", insertQuery, dmInstance)
 
             ####
             # Function to Populate the tblMonitoringOwlCal - Check
             ####
 
-            # List of Fields to retain
-            fieldList = ['GlobalID', 'CallStartTime', 'CallMethodID']
+            fieldListOwlCall = ['GlobalID', 'CallStartTime', 'CallMethodID']
 
-            etl_NSOW.processMonitoringOwlCall(fieldList, outDFSubset, dmInstance)
+            etl_NSOW.processMonitoringOwlCall(fieldListOwlCall, outDFSubset, dmInstance)
 
             ####
             # Function to Populate the tblWeather table - Check
             ####
 
-            # List of Fields to retain
-            fieldList = ['GlobalID', 'WindyTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
-                         'LightTypeID']
+            # List of Fields to retain tblWeather - Drop from Event Dataframe
+            fieldListWeather = ['GlobalID', 'WindTypeID', 'PercipitationTypeID', 'Temperature_F', 'CloudsPercentage',
+                                'LightTypeID']
 
-            etl_NSOW.processWeather(fieldList, outDFSubset, dmInstance)
+            etl_NSOW.processWeather(fieldListWeather, outDFSubset, dmInstance)
 
             ####
             # Function to Populate the tblEvidence table - Check
@@ -278,7 +328,8 @@ class etl_NSOW:
 
             # Add 'MergedDate' field with date/time now
             now = datetime.now()
-            inDFAppend['MergedDate'] = now
+            iso_date = now.strftime("%Y-%m-%d")
+            inDFAppend['MergedDate'] = iso_date
 
             # Grab all column names from the dataframe
             cols = inDFAppend.columns.tolist()
