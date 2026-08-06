@@ -53,8 +53,8 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'NSOW'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant|NSOW)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_Master_BE_20260708 - copy.accdb'
-inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260414.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\workspace\SFAN_SpottedOwl_Master_BE_20260709 - Copy.accdb'
+inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260709.accdb'
 
 # Year Being Processed
 inYear = 2026
@@ -66,13 +66,13 @@ inYear = 2026
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "54cff42ed5ce4cbaad748c971bdd8a12"
+layerID = "1eca72b85d6f41438261f3b577400671"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
 # If processing with OAuth2.0 define the client ID. You will be prompted to pass your client Id. Note AGOL and Portal
 # have separate OAuth2.0 values.
-pythonApp_ID = 'xxxxxxxx'   # If not using define as 'na' ('client ID'|'na')
+pythonApp_ID = 'VFfN107sG4W47jXo'   # If not using define as 'na' ('client ID'|'na')
 #################################
 
 # NPS User Name of person running the QC script.  This will be populated in the 'QA_USer' field of the 'tbl_QA_Results
