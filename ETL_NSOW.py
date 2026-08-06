@@ -50,16 +50,24 @@ class etl_NSOW:
         try:
 
             ######
-            # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
+            # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            # etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
-            # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4  - TO DO
+            # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            # etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+
+
+            ####
+            # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - STOPPED HERE 8/6/2026
+            ####
+
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+
 
             ####
             # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5 - TO DO
@@ -83,7 +91,7 @@ class etl_NSOW:
             outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
 
             # Process Nest Survey Observations in the 'obserfversrepeatnestsurvey' table - starting in 2026v1.3
-
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
 
 
 
@@ -299,6 +307,246 @@ class etl_NSOW:
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
+
+
+    def processMouseOffer(outDFDic, etlInstance, dmInstance):
+
+        """
+        ETL routine for the mouse offering repeat (i.e. mouseofferingrepeat table).
+        The majority of this information on this form will be pushed to the following tables:
+        tblMousingOffer.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance:
+
+        :return
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'mouseoffering' in key:
+                    inDF = df
+                    break
+
+
+            inDF2 = inDF.rename(columns={'OwlSexID.1': 'OwlAgeID'}) #OwlSexID.1 was inadvertently defined as 'OwlSexID' in the Survey 'bind::esri::fieldAlias' field hence the two 'OwlSexID' fields.
+
+            # Create initial dataframe subset
+            outDFSubset = inDF2[['GlobalID', 'TimeOut', 'TimeTaken', 'MouseFateID', 'FateTime', 'OwlSexID',
+                                              'OwlAgeID', 'BehaviorNotes', 'ParentGlobalID']]
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            outDFSubset['MergedDate'] = iso_date
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
+            inDFAppend = outDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'ID']],
+                left_on = 'ParentGlobalID',
+                right_on= 'GlobalID',
+                how='left')
+
+            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID']).rename(
+                columns={'ID': 'EventSurveyID'})
+
+            # Check for Orphaned Records (i.e. no match in EventSurvey) - Shouldn't happen but doesn't hurt to have the check
+            unmatched = inDFAppendFinal['EventSurveyID'].isna().sum()
+            if unmatched:
+
+                msgLog = f'{unmatched} child rows had no matching EventSurvey parent - exiting script'
+                logging.critical(msgLog, exc_info=True)
+                print(msgLog)
+
+                sys.exit(1)
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            inDFAppendFinalClean = inDFAppendFinal.replace([np.nan, 'nan'], None)
+
+            ########
+            # Append to tblMousingOffer
+            ########
+
+            # Grab all column names from the dataframe
+            cols = inDFAppendFinalClean.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblMousingOffer ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalClean, "tblMousingOffer", insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f"Success ETL Survey/Event Form ETL_NSOW.py - {func_name}"
+            logging.info(logMsg)
+            print(logMsg)
+
+            return
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+
+    def processObservers(outDFDic, etlInstance, dmInstance, surveyType):
+
+        """
+        ETL routine for the Observers offering repeat (i.e. observersrepeat_1 table). These are the observers for all
+        but the Nest Tree Surveys.
+        Information on this form will be pushed to the following tables:
+        tblEventPersonnel.
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+        :param surveyType: Variable defines if processing is for MonitoringSurvey or NestSurvey (
+
+        :return
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+
+            # If Monitoring Survey Process the Observers Repeat
+            if surveyType == 'MonitoringSurvey':
+                for key, df in outDFDic.items():
+                    if 'observersrepeat' in key:
+                        inDF = df
+                        break
+
+            # If Monitoring Survey Process the Nest Observers Repeat
+            if surveyType == 'NestSurvey':
+                for key, df in outDFDic.items():
+                    if 'observersrepeatnestsurvey' in key:
+                        inDF = df
+                        break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF[['PersonnelID', 'PersonnelRoleID', 'OtherObserver', 'OtherObserverRole',
+                                 'ParentGlobalID']]
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            outDFSubset['MergedDate'] = iso_date
+
+            # Define the EventID via the ParentGlobalID fields
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
+            inDFAppend = outDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'ID']],
+                left_on = 'ParentGlobalID',
+                right_on= 'GlobalID',
+                how='left')
+
+            #### STOPPED HERE 8/6/2026
+
+            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            inDFAppend = inDFAppend.drop(columns=['ParentGlobalID']).rename(
+                columns={'ID': 'EventSurveyID'})
+
+            # Check for Orphaned Records (i.e. no match in EventSurvey) - Shouldn't happen but doesn't hurt to have the check
+            unmatched = inDFAppend['EventSurveyID'].isna().sum()
+            if unmatched:
+
+                msgLog = f'{unmatched} child rows had no matching EventSurvey parent - exiting script'
+                logging.critical(msgLog, exc_info=True)
+                print(msgLog)
+
+                sys.exit(1)
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            inDFAppend = inDFAppend.replace([np.nan, 'nan'], None)
+
+            #####################################
+            #####################################
+            # Identify Others - Export to .csv so they can be defined in the backend
+            # Alternatively could push concatenated Other Observers and Records to the Event Narrative - this has not
+            # been developed - 8/6/2026 KRS.
+
+            # Subset to only records with other
+            inDFOthers = inDFAppend[inDFAppend['OtherObserver'].notna()].copy()
+            inDFOthersSubset = inDFOthers[['OtherObserver', 'OtherObserverRole',
+                                 'EventSurveyID', 'ParentGlobalID', 'GlobalID']]
+            numberRecords = inDFOthersSubset.shape[0]
+
+            # Proceed on Processing
+            if numberRecords > 0:
+
+                    inDFOthersSubset = dfObserversNull.sort_values(by='EventSurveyID')
+                    logMsg = f'WARNING there are {numberRecords} records with Other Observers defined - add these observers via Survey 123 website or in the survey - then reprocess the surveys.'
+                    dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                    logging.warning(logMsg)
+
+                    outPath = f'{etlInstance.outDir}\RecordsNSOSurveys_OtherObserverDefinitionNeeded_{surveyType}.csv'
+                    if os.path.exists(outPath):
+                        os.remove(outPath)
+
+                    inDFOthersSubset.to_csv(outPath, index=True)
+
+                    logMsg = (f'Exporting Records in need of Observer Definition in the Survey see - {outPath} \n'
+                              f'Exiting ETL_NSOW.py - processObservers - {surveyType}')
+
+                    dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+                    logging.warning(logMsg)
+                    exit()
+
+            ########
+            # Once Other Observer Records have been take care of - Append to tblEventPersonnel
+            ########
+
+            # Grab all column names from the dataframe
+            cols = inDFAppendFinalClean.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblEventPersonnel ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalClean, "tblEventPersonnel", insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f"Success ETL Survey/Event Form ETL_NSOW.py - {func_name} - for - {surveyType}"
+            logging.info(logMsg)
+            print(logMsg)
+
+            return
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name} - for - {surveyType}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+
 
     def processMonitoringOwlCall(fieldList, inDF, etlInstance, dmInstance):
         """
