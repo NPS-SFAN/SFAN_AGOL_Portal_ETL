@@ -13,13 +13,14 @@ import inspect
 import pandas as pd
 import numpy as np
 from datetime import datetime
-
+import re
+import geopandas as gpd
 
 class etl_NSOW:
     def __init__(self):
 
         """
-        Define the QC Protocol instantiation attributes
+        Define the instantiation attributes
 
         :param TBD
         :return: zzzz
@@ -53,14 +54,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            # etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            # etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
-
+            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,7 +68,7 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            # etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
 
             ####
@@ -76,11 +76,11 @@ class etl_NSOW:
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
-            # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed - To Be Developed
+            # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed - In Process
             ######
 
             outDFNewTreeNest = etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
@@ -796,7 +796,7 @@ class etl_NSOW:
             inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
             dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-            # Define the EvenetSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
+            # Define the EventSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
             inDFAppend = outDFSubset.merge(
                 dfEventSurvey[['GlobalID', 'ID']],
                 left_on='ParentGlobalID',
@@ -845,3 +845,267 @@ class etl_NSOW:
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
 
+    def process_NewTreeNest(outDFDic, etlInstance, dmInstance):
+
+        """
+        ETL to process the New Nest Trees.  This data is in the SFAN_NSOW_AGOL_{YearVersion}.csv table.
+        Event Type = 'Nest Survey' and 'newtreeneeded' = 'Yes'.
+
+        New  Nest Tree Survey data is pushed to the 'refNestTree' and 'refNestTreeDetails'
+
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'SFAN_NSOW' in key:
+                    inDF = df
+                    break
+
+            # Subset to Only the 'New Nest Tree' Records  -
+            outDFSubsetInitial = inDF[(inDF['Event Type'] == 'NestSurvey') & (inDF['newtreeneeded'] == 'yes')]
+
+            # Create initial dataframe subset
+            outDFSubset = outDFSubsetInitial[['GlobalID', 'SiteIDNewTree', 'SurveyYearNewTree',
+                                              'TaxonID', 'LongitudeNewTree', 'LatitudeNewTree','UTM_EastingNewTree',
+                                              'UTM_NorthingNewTree', 'UTM_ZoneNewTree',
+                                              'CoordinateSystemNewTree', 'CoordinateMethodNewTree',
+                                              'AccuracyNewTree', 'NestTreeDirections', 'IsActive',
+                                              'AspectDegrees', 'BearingTypeID', 'SlopePercent', 'SlopePositionID',
+                                              'CreationDate', 'Creator', 'GPSUnitID']].rename(
+                columns={'SiteIDNewTree': 'SiteName',
+                         'CreationDate': 'CreatedDate',
+                         'Creator': 'CreatedBy',
+                         'SurveyYearNewTree': 'FirstYearUsed',
+                         'TaxonID': 'NestTreeSpeciesID',
+                         'LongitudeNewTree': 'Longitude',
+                         'LatitudeNewTree': 'Latitude',
+                         'UTM_EastingNewTree': 'UTME',
+                         'UTM_NorthingNewTree': 'UTMN',
+                         'UTM_ZoneNewTree': 'UTMZone',
+                         'CoordinateSystemNewTree': 'CoordinateSystemID',
+                         'AccuracyNewTree':'AccuracyMeters',
+                         'CoordinateMethodNewTree': 'CoordinateMethodID'})
+
+            # List of Fields to be pushed to the refNestTreeDetails - GlobalID will be used to get the ID field in the
+            # parent refNestTree table.
+            refNestTreeDetailsList = ['GlobalID', 'AspectDegrees', 'BearingTypeID', 'SlopePercent', 'SlopePositionID']
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+
+            fieldLen = outDFSubset.shape[1]
+
+            # Insert 'DataProcesingLevelID' = 1
+            outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
+
+            # Insert 'ProtectedStatusID' = 1 - defaulting all to protectec
+            outDFSubset.insert(fieldLen - 1, "ProtectedStatusID", 1)
+
+
+            ########
+            # Define the SiteID via lookup on the RefSite table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT refSite.* FROM refSite;"
+            dfRefSite = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the SiteID via join on the 'SiteName'fields
+            outDFSubsetwSiteID = outDFSubset.merge(
+                dfRefSite[['SiteName', 'ID']],
+                left_on='SiteName',
+                right_on='SiteName',
+                how='left')
+
+            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            outDFSubsetwSiteID = outDFSubsetwSiteID.drop(
+                columns=['SiteName', 'SiteName']).rename(
+                columns={'ID': 'SiteID'})
+
+
+            #######
+            # Define the Lat/Lon or UTM values as needed via GeoPandas
+            ########
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFSubsetwSiteIDCleaned = outDFSubsetwSiteID.replace([np.nan, 'nan', ''], None)
+
+
+            # UTM Zone Default will be UTM Zone 10n and WGS 84 for Lat/Lon
+            outDFSubsetwCoords = processGeospatialPoints(outDFSubsetwSiteIDCleaned, etlInstance, dmInstance)
+
+
+            ########
+            # Append
+            ########
+
+
+
+
+
+
+
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+def processGeospatialPoints(inDF, etlInstance, dmInstance):
+    """
+    Routine to use Geopandas to define the Lat/Lon and or UTM fields that are null
+
+    :param inDF - Dataframe with the New Nest Records and Coordinates to be defined
+    :param etlInstance - etl instance
+    :param dmInstance: Data Management instance
+
+    :return outDFwCoordinates - Dataframe with processed Lat/Lon or UTM fields
+    """
+
+    try:
+
+        # If Lat/Lon Defined - set Coordinate System to  4 - WGS84/Lat/Lon else will be manually defined during the workflow
+        # via the lookup table
+        mask = inDF['Longitude'].notna() & inDF['Latitude'].notna()
+        # Define Coordinate System WGS84/Lat/Lon - see tluCoordinateSystem
+        inDF.loc[mask, 'CoordinateSystemID'] = 4
+        # Define Coordinate Method WGS84/Lat/Lon - see tluCoordinateMethod
+        inDF.loc[mask, 'CoordinateSystemID'] = 1
+
+        coordinateSystemDic = {'id':['1', '2', '3', '4'],
+                               'System':['NAD83', 'WGS84', 'NAD83','WGS84']}
+
+
+
+
+        # Hit the Function which will define the Lat/Lon or UTM depending upon what fields are defined and null
+        outDF = fill_coordinates(coordinateSystemDic, inDF)
+
+        func_name = inspect.currentframe().f_code.co_name
+        logMsg = f'Success Method - {func_name}'
+        logging.info(logMsg, exc_info=True)
+        print(logMsg)
+
+        return outDF
+
+    except Exception as e:
+
+        func_name = inspect.currentframe().f_code.co_name
+        logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+        logging.critical(logMsg, exc_info=True)
+
+def _zone_number(zone_val, lon=None):
+    """Zone from the UTMZone field (strips any hemisphere letter), or derived from longitude."""
+    if pd.notna(zone_val):
+        m = re.search(r'\d+', str(zone_val))
+        if m:
+            return int(m.group())
+    if lon is not None and pd.notna(lon):
+        return int((float(lon) + 180) // 6) + 1
+    return None
+
+def _hemisphere(zone_val, lat=None):
+    """Hemisphere from a trailing N/S in UTMZone, else from latitude sign (defaults to N)."""
+    if isinstance(zone_val, str):
+        z = zone_val.strip().upper()
+        if z.endswith('S'):
+            return 'S'
+        if z.endswith('N'):
+            return 'N'
+    if lat is not None and pd.notna(lat):
+        return 'N' if float(lat) >= 0 else 'S'
+    return 'N'
+
+def _datum_from_id(v, datum_lookup, default='WGS84'):
+    if pd.isna(v):
+        return default
+    return datum_lookup.get(str(int(float(v))), default)
+
+def _utm_epsg(datum, zone, hemi, UTM_BASE):
+    return UTM_BASE[datum][hemi] + int(zone)
+
+
+def fill_coordinates(coordinateSystemDic, inDF):
+    # Define the datum lookup from the above Coordinate System Dictionary
+    datum_lookup = dict(zip(coordinateSystemDic['id'], coordinateSystemDic['System']))
+
+    # Define the EPSG code for each (datum, hemisphere); add the zone number to get the CRS.
+    # WGS84 N: 326xx / S: 327xx   |   NAD83 N: 269xx (NAD83 is North-America-centric)
+    UTM_BASE = {'WGS84': {'N': 32600, 'S': 32700},
+                'NAD83': {'N': 26900, 'S': 26900}}
+
+    df = inDF.copy()
+
+    # Make sure all columns exist and numeric ones are numeric.
+    for c in ['Longitude', 'Latitude', 'UTME', 'UTMN', 'UTMZone', 'CoordinateSystemID']:
+        if c not in df.columns:
+            df[c] = pd.NA
+    for c in ['Longitude', 'Latitude', 'UTME', 'UTMN']:
+        df[c] = pd.to_numeric(df[c], errors='coerce')
+
+    has_latlon = df['Latitude'].notna() & df['Longitude'].notna()
+    has_utm = df['UTME'].notna() & df['UTMN'].notna() & df['UTMZone'].notna()
+
+    # ------------------------------------------------------------------
+    # UTM -> Lat/Lon  (UTM defined, Lat/Lon missing)
+    # ------------------------------------------------------------------
+    need_latlon = has_utm & ~has_latlon
+    if need_latlon.any():
+        sub = df.loc[need_latlon].copy()
+        sub['_datum'] = sub['CoordinateSystemID'].apply(lambda v: _datum_from_id(v, datum_lookup))
+        sub['_zone'] = sub['UTMZone'].apply(lambda v: _zone_number(v))
+        sub['_hemi'] = sub.apply(lambda r: _hemisphere(r['UTMZone'], r['Latitude']), axis=1)
+        sub['_epsg'] = sub.apply(lambda r: _utm_epsg(r['_datum'], r['_zone'], r['_hemi'], UTM_BASE), axis=1)
+
+        for epsg, grp in sub.groupby('_epsg'):
+            g = gpd.GeoDataFrame(
+                grp,
+                geometry=gpd.points_from_xy(grp['UTME'], grp['UTMN']),
+                crs=int(epsg),
+            ).to_crs(4326)
+            df.loc[g.index, 'Longitude'] = g.geometry.x.values
+            df.loc[g.index, 'Latitude'] = g.geometry.y.values
+
+    # ------------------------------------------------------------------
+    # Lat/Lon -> UTM  (Lat/Lon defined, UTM missing)
+    # ------------------------------------------------------------------
+    need_utm = has_latlon & ~has_utm
+    if need_utm.any():
+        sub = df.loc[need_utm].copy()
+        sub['_datum'] = sub['CoordinateSystemID'].apply(lambda v: _datum_from_id(v, datum_lookup))
+        # Use the stated zone if present, otherwise derive it from longitude.
+        sub['_zone'] = sub.apply(lambda r: _zone_number(r['UTMZone'], r['Longitude']), axis=1)
+        sub['_hemi'] = sub.apply(lambda r: _hemisphere(r['UTMZone'], r['Latitude']), axis=1)
+        sub['_epsg'] = sub.apply(lambda r: _utm_epsg(r['_datum'], r['_zone'], r['_hemi'], UTM_BASE), axis=1)
+
+        for epsg, grp in sub.groupby('_epsg'):
+            g = gpd.GeoDataFrame(
+                grp,
+                geometry=gpd.points_from_xy(grp['Longitude'], grp['Latitude']),
+                crs=4326,
+            ).to_crs(int(epsg))
+            df.loc[g.index, 'UTME'] = g.geometry.x.values
+            df.loc[g.index, 'UTMN'] = g.geometry.y.values
+            # Only fill UTMZone where it was missing; don't clobber existing values.
+            zone_fill = pd.Series(grp['_zone'].values, index=g.index)
+            df.loc[g.index, 'UTMZone'] = df.loc[g.index, 'UTMZone'].fillna(zone_fill)
+
+    # Posts Hoc update:
+    df.loc[inDF['UTMZone'] == 10, 'UTMZone'] = '10N'
+
+    return df
