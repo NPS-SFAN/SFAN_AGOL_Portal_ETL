@@ -53,13 +53,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            # etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            # etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
 
             ####
@@ -68,11 +68,11 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            # etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
 
             ####
-            # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5 - STOPPED HERE 8/11/2026
+            # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
@@ -765,7 +765,7 @@ class etl_NSOW:
             logging.critical(logMsg, exc_info=True)
 
 
-    def processInventoryCall(etlInstance, dmInstance):
+    def processInventoryCall(outDFDic, etlInstance, dmInstance):
         """
         ETL to process the the inventorycallrepeat_5.csv table.  Data is processed to the
         tblCallPointResponse table.
@@ -804,18 +804,14 @@ class etl_NSOW:
                 how='left')
 
             # Rename ID field to 'EventSurveyID' and drop unneeded fields
-            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID']).rename(
+            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID', 'Call Point Number']).rename(
                 columns={'ID': 'EventSurveyID'})
 
 
 
-            # Rename ID field to 'EventSurveyID' and drop unneeded fields
-            inDFAppend = inDFAppend.drop(columns=['GlobalID']).rename(
-                columns={'ID': 'EventSurveyID'})
-
-            #Sub to records with wit only StatusIndicator values
-            cols_to_check = [c for c in inDFAppend.columns if c != 'EventSurveyID']
-            inDFAppendFinalwData = inDFAppend.dropna(subset=cols_to_check, how='all')
+            #Sub to records with data aonly values
+            cols_to_check = [c for c in inDFAppendFinal.columns if c != 'EventSurveyID']
+            inDFAppendFinalwData = inDFAppendFinal.dropna(subset=cols_to_check, how='all')
 
             #Add 'MergedDate' field with date/time now
             now = datetime.now()
@@ -835,7 +831,7 @@ class etl_NSOW:
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblStatusIndicators",
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblCallPointResponse",
                                             insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
@@ -849,97 +845,3 @@ class etl_NSOW:
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
 
-    def processMouseOffer(outDFDic, etlInstance, dmInstance):
-
-        """
-        ETL routine for the mouse offering repeat (i.e. mouseofferingrepeat table).
-        The majority of this information on this form will be pushed to the following tables:
-        tblMousingOffer.
-
-        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
-        :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance:
-
-        :return
-        """
-
-        try:
-            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'mouseoffering' in key:
-                    inDF = df
-                    break
-
-            inDF2 = inDF.rename(columns={
-                'OwlSexID.1': 'OwlAgeID'})  # OwlSexID.1 was inadvertently defined as 'OwlSexID' in the Survey 'bind::esri::fieldAlias' field hence the two 'OwlSexID' fields.
-
-            # Create initial dataframe subset
-            outDFSubset = inDF2[['GlobalID', 'TimeOut', 'TimeTaken', 'MouseFateID', 'FateTime', 'OwlSexID',
-                                 'OwlAgeID', 'BehaviorNotes', 'ParentGlobalID']]
-
-            ##############################
-            # Numerous Field CleanUp Steps
-            ##############################
-
-            # Add 'MergedDate' field with date/time now
-            now = datetime.now()
-            iso_date = now.strftime("%Y-%m-%d")
-            outDFSubset['MergedDate'] = iso_date
-
-            # Define the EventID via the ParentGlobalID field
-            # Read in the tblEventSurvey table
-            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
-            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
-
-            # Define the EvenetSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
-            inDFAppend = outDFSubset.merge(
-                dfEventSurvey[['GlobalID', 'ID']],
-                left_on='ParentGlobalID',
-                right_on='GlobalID',
-                how='left')
-
-            # Rename ID field to 'EventSurveyID' and drop unneeded fields
-            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID']).rename(
-                columns={'ID': 'EventSurveyID'})
-
-            # Check for Orphaned Records (i.e. no match in EventSurvey) - Shouldn't happen but doesn't hurt to have the check
-            unmatched = inDFAppendFinal['EventSurveyID'].isna().sum()
-            if unmatched:
-                msgLog = f'{unmatched} child rows had no matching EventSurvey parent - exiting script'
-                logging.critical(msgLog, exc_info=True)
-                print(msgLog)
-
-                sys.exit(1)
-
-            # Update any 'nan' string or np.nan values to None to consistently handle null values.
-            pd.set_option('mode.copy_on_write', False)
-            inDFAppendFinalClean = inDFAppendFinal.replace([np.nan, 'nan'], None)
-
-            ########
-            # Append to tblMousingOffer
-            ########
-
-            # Grab all column names from the dataframe
-            cols = inDFAppendFinalClean.columns.tolist()
-
-            # Build the SQL query dynamically
-            insertQuery = (
-                f"INSERT INTO tblMousingOffer ({', '.join(cols)}) "
-                f"VALUES ({', '.join(['?'] * len(cols))})")
-
-            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalClean, "tblMousingOffer", insertQuery, dmInstance)
-
-            func_name = inspect.currentframe().f_code.co_name
-            logMsg = f"Success ETL Survey/Event Form ETL_NSOW.py - {func_name}"
-            logging.info(logMsg)
-            print(logMsg)
-
-            return
-
-        except Exception as e:
-
-            func_name = inspect.currentframe().f_code.co_name
-            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
-            logging.critical(logMsg, exc_info=True)
