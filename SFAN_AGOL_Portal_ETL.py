@@ -27,6 +27,8 @@ Imported data from Survey 123 AGOL/Portal Feature Layers.
 Python Environment: arcgispro-py3-entra2 - Python 3.11, clone of the ArcGISPro 3.3 environment in entra for ArcPY
 Note pywin 32 was imported into the Arcgis pro clone
 
+arcgispro-py3-clone2 - new environment cloned from ArcGIS Pro with Geopandas installed from ArcGISPro - 20260812
+
 Date Developed - August 2024
 Development Status - Ongoing
 Created By - Kirk Sherrill - Data Scientist/Manager San Francisco Bay Area Network Inventory and Monitoring
@@ -53,7 +55,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'NSOW'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant|NSOW)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\workspace\SFAN_SpottedOwl_Master_BE_20260709 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\workspace\SFAN_SpottedOwl_Master_BE_20260812 - Copy.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260709.accdb'
 
 # Year Being Processed
