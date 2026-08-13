@@ -54,13 +54,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,7 +68,7 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
 
             ####
@@ -76,24 +76,37 @@ class etl_NSOW:
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
-            # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed - In Process
+            # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed
             ######
 
-            outDFNewTreeNest = etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - To Be Developed
             ######
 
-            # Nest Survey Observervations go to table - 'tblNestTreeFeatures' -
             outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
 
-            # Process Nest Survey Observations in the 'obserfversrepeatnestsurvey' table - starting in 2026v1.3
+
+
+            # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3  - To Do
             etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
+
+
+
+            ############################
+            # Process Species Detections - speciesdetectionrepeat_2.csv - TO DO
+            ############################
+
+            ############################
+            # Process Other Species  - otherrspecies_3.csv - To DO
+            ############################
+
+
 
 
 
@@ -877,10 +890,9 @@ class etl_NSOW:
                                               'CoordinateSystemNewTree', 'CoordinateMethodNewTree',
                                               'AccuracyNewTree', 'NestTreeDirections', 'IsActive',
                                               'AspectDegrees', 'BearingTypeID', 'SlopePercent', 'SlopePositionID',
-                                              'CreationDate', 'Creator', 'GPSUnitID']].rename(
+                                              'CreationDate', 'GPSUnitID']].rename(
                 columns={'SiteIDNewTree': 'SiteName',
                          'CreationDate': 'CreatedDate',
-                         'Creator': 'CreatedBy',
                          'SurveyYearNewTree': 'FirstYearUsed',
                          'TaxonID': 'NestTreeSpeciesID',
                          'LongitudeNewTree': 'Longitude',
@@ -894,20 +906,23 @@ class etl_NSOW:
 
             # List of Fields to be pushed to the refNestTreeDetails - GlobalID will be used to get the ID field in the
             # parent refNestTree table.
-            refNestTreeDetailsList = ['GlobalID', 'AspectDegrees', 'BearingTypeID', 'SlopePercent', 'SlopePositionID']
+            refNestTreeDetailsList = ['AspectDegrees', 'BearingTypeID', 'SlopePercent', 'SlopePositionID']
 
             ##############################
             # Numerous Field CleanUp Steps
             ##############################
 
+            # If CoordinateMethodID is null set to 1
+            outDFSubset['CoordinateMethodID'] = outDFSubset['CoordinateMethodID'].fillna(1)
+
+
             fieldLen = outDFSubset.shape[1]
 
-            # Insert 'DataProcesingLevelID' = 1
-            outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
+            # Insert 'LastModifiedBy' = 1
+            outDFSubset.insert(fieldLen, "LastModifiedBy", etlInstance.inUser)
 
             # Insert 'ProtectedStatusID' = 1 - defaulting all to protectec
             outDFSubset.insert(fieldLen - 1, "ProtectedStatusID", 1)
-
 
             ########
             # Define the SiteID via lookup on the RefSite table
@@ -925,11 +940,17 @@ class etl_NSOW:
                 right_on='SiteName',
                 how='left')
 
-            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            # Rename ID field to 'SiteID' and drop unneeded fields
             outDFSubsetwSiteID = outDFSubsetwSiteID.drop(
                 columns=['SiteName', 'SiteName']).rename(
                 columns={'ID': 'SiteID'})
 
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            outDFSubsetwSiteID['MergedDate'] = iso_date
+            iso_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
+            outDFSubsetwSiteID['LastModifiedDate'] = iso_datetime
 
             #######
             # Define the Lat/Lon or UTM values as needed via GeoPandas
@@ -939,32 +960,137 @@ class etl_NSOW:
             pd.set_option('mode.copy_on_write', False)
             outDFSubsetwSiteIDCleaned = outDFSubsetwSiteID.replace([np.nan, 'nan', ''], None)
 
+            ##########
+            # Define missing Lat/Lon or UTMS values using the coordinates that were defined in the survey
+            ##########
 
-            # UTM Zone Default will be UTM Zone 10n and WGS 84 for Lat/Lon
             outDFSubsetwCoords = processGeospatialPoints(outDFSubsetwSiteIDCleaned, etlInstance, dmInstance)
 
-
             ########
-            # Append
+            # Append the New Nest Tree Records
             ########
 
+            # Remove the NestTreeDetails Fields
+            outDFNestTreeToAppend = outDFSubsetwCoords.drop(columns=refNestTreeDetailsList)
+
+            # Convert the UTM to Integer - round prior to conversion
+            for c in ['UTME', 'UTMN']:
+                outDFNestTreeToAppend[c] = (
+                    pd.to_numeric(outDFNestTreeToAppend[c], errors='coerce')
+                    .round()
+                    .astype('Int64'))
+
+            # Convert Float fields to Integer
+            for c in ['FirstYearUsed', 'NestTreeSpeciesID', 'CoordinateSystemID', 'CoordinateMethodID', 'GPSUnitID']:
+                outDFNestTreeToAppend[c] = pd.to_numeric(outDFNestTreeToAppend[c], errors='coerce').astype('Int64')
+            # IsActive is default definng to 1 in the db table.
+            outDFNestTreeToAppend = outDFNestTreeToAppend.drop(columns={'IsActive'})
 
 
+            # Grab all column names from the dataframe
+            cols = outDFNestTreeToAppend.columns.tolist()
 
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO refNestTree ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
 
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFNestTreeToAppend, "refNestTree",
+                                            insertQuery, dmInstance)
 
+            ##########
+            # Process the refNestTreeDetails attributes
+            ##########
 
+            # Add Merged Date to the list of field
+            refNestTreeDetailsList.append('MergedDate')
+            refNestTreeDetailsList.append('GlobalID')
+            inDFNestTreeDetails = outDFSubsetwSiteIDCleaned[refNestTreeDetailsList]
+
+            etl_NSOW.process_NestTreeDetails(inDFNestTreeDetails, etlInstance, dmInstance)
+
+            logMsg = f'Completed New Nest Tree - and Nest Tree Details processing'
+            print(logMsg)
+            logging.info(logMsg, exc_info=True)
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
             logging.info(logMsg, exc_info=True)
             print(logMsg)
 
+
         except Exception as e:
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
+
+
+    def process_NestTreeDetails(inDF, etlInstance, dmInstance):
+        """
+        Routine to for ETL for refNestTreeDetails - these are applicable when it is a New Nest Tree
+
+        :param inDF - Dataframe Nest Tree Details to be processed
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+        try:
+
+            # Define the 'NestTreeID' value in 'refNesTreeDetails' via join on refNestTree - GlobalID - the ID field in
+            # refNestTree is the 'NestTreeID' in refNestTreeDetails.
+
+            ########
+            # Define the NestTreeID via lookup on the refNestTree table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT refNestTree.* FROM refNestTree;"
+            dfrefNestTree = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the SiteID via join on the 'SiteName'fields
+            outDFwNestTreeID = inDF.merge(
+                dfrefNestTree[['ID', 'GlobalID']],
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'SiteID' and drop unneeded fields
+            outDFwNestTreeID = outDFwNestTreeID.drop(
+                columns=['GlobalID']).rename(
+                columns={'ID': 'NestTreeID'})
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFwNestTreeIDCleaned = outDFwNestTreeID.replace([np.nan, 'nan', ''], None)
+
+            # Grab all column names from the dataframe
+            cols = outDFwNestTreeIDCleaned.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO refNestTreeDetails ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeIDCleaned, "refNestTreeDetails",
+                                            insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
 
 def processGeospatialPoints(inDF, etlInstance, dmInstance):
     """
@@ -990,18 +1116,15 @@ def processGeospatialPoints(inDF, etlInstance, dmInstance):
         coordinateSystemDic = {'id':['1', '2', '3', '4'],
                                'System':['NAD83', 'WGS84', 'NAD83','WGS84']}
 
-
-
-
-        # Hit the Function which will define the Lat/Lon or UTM depending upon what fields are defined and null
-        outDF = fill_coordinates(coordinateSystemDic, inDF)
+        #Function to define the Lat/Lon or UTM depending upon what fields are defined and null
+        outDFwCoordinates = fill_coordinates(coordinateSystemDic, inDF)
 
         func_name = inspect.currentframe().f_code.co_name
-        logMsg = f'Success Method - {func_name}'
+        logMsg = f'Success Function - {func_name}'
         logging.info(logMsg, exc_info=True)
         print(logMsg)
 
-        return outDF
+        return outDFwCoordinates
 
     except Exception as e:
 
@@ -1106,6 +1229,6 @@ def fill_coordinates(coordinateSystemDic, inDF):
             df.loc[g.index, 'UTMZone'] = df.loc[g.index, 'UTMZone'].fillna(zone_fill)
 
     # Posts Hoc update:
-    df.loc[inDF['UTMZone'] == 10, 'UTMZone'] = '10N'
+    df.loc[df['UTMZone'] == 10, 'UTMZone'] = '10N'
 
     return df
