@@ -54,13 +54,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,7 +68,7 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
 
             ####
@@ -76,20 +76,20 @@ class etl_NSOW:
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
             # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed
             ######
 
-            etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
-            # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - To Be Developed
+            # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - In Process - STOPPED HERE 2026/8/13
             ######
 
-            outDFNestSurvey = etl_NSOW.process_NestSurvey(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
 
 
 
@@ -135,7 +135,7 @@ class etl_NSOW:
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param etlInstance: ETL processing instance
-        :param dmInstance: Data Management instance:
+        :param dmInstance: Data Management instance
 
         :return
         """
@@ -1062,6 +1062,88 @@ class etl_NSOW:
             outDFwNestTreeID = outDFwNestTreeID.drop(
                 columns=['GlobalID']).rename(
                 columns={'ID': 'NestTreeID'})
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFwNestTreeIDCleaned = outDFwNestTreeID.replace([np.nan, 'nan', ''], None)
+
+            # Grab all column names from the dataframe
+            cols = outDFwNestTreeIDCleaned.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO refNestTreeDetails ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeIDCleaned, "refNestTreeDetails",
+                                            insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+
+    def process_NestSurveys(outDFDic, etlInstance, dmInstance):
+        """
+        Routine to for ETL processing of nest tree surveys (not new). Data being processed resides in
+        form SFAN_NSOW_AGOL_{YearVersion}.csv.
+
+        Processed records are pushed tables: NestTreeSurvey, tblHabitatFeatures, tblOverstoryVegetation, and
+        tblNestTreeFeatures .
+
+        :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
+        :param etlInstance: ETL processing instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+        try:
+
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'SFAN_NSOW' in key:
+                    inDF = df
+                    break
+
+            # Subset to Only the 'Monitoring Survey' events -
+            outDFSubsetInitial = inDF[inDF['Event Type'] == 'NestSurvey']
+
+            # Create initial dataframe subset  - NOTE WaterTypeID was entered twice in version 1 of survey
+            # Changed value to 'ForestOpeningID' starting in version 1.2
+            outDFSubset = outDFSubsetInitial[['GlobalID', 'Nest Tree (when New)', 'SurveyYear', 'MeasuredDateHabitat',
+                                              'DistanceToWater_Meters', 'WaterTypeID', 'DistanceToForestOpening_Meters',
+                                              'ForestOpeningID', 'DistanceToForestEdge_Meters', 'ForestEdgeID',
+                                              'OverstoryID', 'UnderstoryID', 'MeasuredDateTreeNestFeatures',
+                                              'IsTreeAlive', 'IsTreeTagged', 'TreeTagNumber', 'TreeHeight_Meters',
+                                              'DiameterBreastHeight_cm', 'NestTypeID', 'NestHeight_Meters',
+                                              'NestDescription', 'Creator', 'CreationDate']].rename(
+                columns={'Nest Tree (when New)': 'NestTreeID',
+                         'Creator': 'CreatedBy',
+                         'CreationDate': 'CreatedDate'})
+
+            ##############################
+            # Numerous Field CleanUp Steps
+            ##############################
+            # To DateTime Field
+            outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
+            # Format to m/d/yyy
+            outDFSubset['CreatedDate'] = outDFSubset['CreatedDate'].dt.strftime('%m/%d/%Y')
+            ########################
+            # STOPPED HERE 8/13/2026
+
+
+
+
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             pd.set_option('mode.copy_on_write', False)
