@@ -1019,6 +1019,7 @@ class etl_NSOW:
             logging.info(logMsg, exc_info=True)
             print(logMsg)
 
+            return
 
         except Exception as e:
 
@@ -1120,14 +1121,15 @@ class etl_NSOW:
 
             # Create initial dataframe subset  - NOTE WaterTypeID was entered twice in version 1 of survey
             # Changed value to 'ForestOpeningID' starting in version 1.2
-            outDFSubset = outDFSubsetInitial[['GlobalID', 'Nest Tree (when New)', 'SurveyYear', 'MeasuredDateHabitat',
+            outDFSubset = outDFSubsetInitial[['GlobalID', 'NestTreeID', 'Nest Tree (when New)', 'SurveyYear', 'MeasuredDateHabitat',
                                               'DistanceToWater_Meters', 'WaterTypeID', 'DistanceToForestOpening_Meters',
                                               'ForestOpeningID', 'DistanceToForestEdge_Meters', 'ForestEdgeID',
                                               'OverstoryID', 'UnderstoryID', 'MeasuredDateTreeNestFeatures',
                                               'IsTreeAlive', 'IsTreeTagged', 'TreeTagNumber', 'TreeHeight_Meters',
                                               'DiameterBreastHeight_cm', 'NestTypeID', 'NestHeight_Meters',
                                               'NestDescription', 'Creator', 'CreationDate']].rename(
-                columns={'Nest Tree (when New)': 'NestTreeID',
+                columns={'Nest Tree (when New)': 'NestTreeNameNew',
+                         'NestTreeID': 'NestTreeIDExisting',
                          'Creator': 'CreatedBy',
                          'CreationDate': 'CreatedDate'})
 
@@ -1138,28 +1140,395 @@ class etl_NSOW:
             outDFSubset['CreatedDate'] = pd.to_datetime(outDFSubset['CreatedDate'])
             # Format to m/d/yyy
             outDFSubset['CreatedDate'] = outDFSubset['CreatedDate'].dt.strftime('%m/%d/%Y')
-            ########################
-            # STOPPED HERE 8/13/2026
+
+            fieldLen = outDFSubset.shape[1]
+
+            # Insert 'DataProcesingLevelID' = 1
+            outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
+
+            # Insert 'dataProcesingLevelDate
+            from datetime import datetime
+            dateNow = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+            outDFSubset.insert(fieldLen + 1, "DataProcessingLevelDate", dateNow)
+
+            # Insert 'dataProcesingLevelUser
+            outDFSubset.insert(fieldLen + 2, "DataProcessingLevelUserID", etlInstance.inUser)
 
 
+            #############################
+            # Process tblNestTreeSurvey
+            #############################
+
+            etl_NSOW.process_NestTreeSurveyAppend(outDFSubset, etlInstance, dmInstance)
+
+            #############################
+            # Process tblHabitatFeatures
+            #############################
+
+            etl_NSOW.process_NestTreeHabitatFeatures(outDFSubset, etlInstance, dmInstance)
+
+            #############################
+            # Process tblNestTreeFeatures
+            #############################
+
+            etl_NSOW.process_NestTreeFeatures(outDFSubset, etlInstance, dmInstance)
+
+            #############################
+            # Process tblOverStory and tblUnderstory
+            #############################
+
+            etl_NSOW.process_OverUnderStory(outDFSubset, etlInstance, dmInstance)
+
+            logMsg = (f'Successfully Processed all Methods for Nest Tree Surveys - tblNestTreeSurvey, tblHabitatFeatures,\n'
+                      f'tblNestTreeFeatures, tblOverStory and tblUnderstory')
+
+            porint(logMsg)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
 
 
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_NestTreeSurveyAppend(inDF, etlInstance, dmInstance):
+        """
+        Routine to use append to the tblNestTreeSurvey Table.  If it is a new nest tree the 'NestTreeID' will not be
+        defined. Will need to the ID via parsing the 'NestTreeNameNew' (e.g. {SiteName} - {Year}) lookup on the refSite
+        to get the SiteID and then lookup up the SiteID and FirstYearUsed in refNestTree to get the refNestTree 'ID'.
+
+        :param inDF - Dataframe with records to be processed - will need a subsequent field filter to be applied.
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            appendFieldList = ['GlobalID', 'NestTreeIDExisting', 'NestTreeNameNew', 'SurveyYear', 'CreatedDate',
+                               'CreatedBy', 'DataProcessingLevelID',
+                               'DataProcessingLevelDate', 'DataProcessingLevelUserID']
+
+            # Subset to the fields of interest
+            dfToAppend = inDF[appendFieldList]
+
+            ########
+            # Define the NestTreeID via lookup on the refNestTree table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT refNestTree.* FROM refNestTree;"
+            dfrefNestTree = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the NestTreeID via join on the 'SiteName' fields
+            outDFwNestTreeID = dfToAppend.merge(
+                dfrefNestTree[['ID', 'GlobalID']],
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'SiteID' and drop unneeded fields
+            outDFwNestTreeID = outDFwNestTreeID.rename(
+                columns={'ID': 'NestTreeIDNew'})
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             pd.set_option('mode.copy_on_write', False)
             outDFwNestTreeIDCleaned = outDFwNestTreeID.replace([np.nan, 'nan', ''], None)
 
+
+            # Compile 'NestTreeIDNew' and 'NestTreeID' into one field (this will aggregate is survey wasn't done on a new
+            # tree rather an existing tree.  In most case it will be a new survey tree but not always.
+            outDFwNestTreeIDCleaned['NestTreeID'] = outDFwNestTreeIDCleaned['NestTreeIDExisting'].combine_first(outDFwNestTreeIDCleaned['NestTreeIDNew'])
+
+            # Drop Columns not needed
+            outDFwNestTreeIDToAppend = outDFwNestTreeIDCleaned.drop(
+                columns={'NestTreeIDExisting', 'NestTreeIDNew', 'NestTreeNameNew'})
+
             # Grab all column names from the dataframe
-            cols = outDFwNestTreeIDCleaned.columns.tolist()
+            cols = outDFwNestTreeIDToAppend.columns.tolist()
 
             # Build the SQL query dynamically
             insertQuery = (
-                f"INSERT INTO refNestTreeDetails ({', '.join(cols)}) "
+                f"INSERT INTO tblNestTreeSurvey ({', '.join(cols)}) "
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeIDCleaned, "refNestTreeDetails",
+            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeIDToAppend, "tblNestTreeSurvey",
                                             insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_NestTreeHabitatFeatures(inDF, etlInstance, dmInstance):
+
+        """
+        Routine to process Nest Survey records and info being pushed to the tblHabitatFeatures table
+
+        :param inDF - Dataframe with the Nest Survey records
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            appendFieldList = ['GlobalID', 'MeasuredDateHabitat', 'DistanceToWater_Meters', 'WaterTypeID',
+                               'DistanceToForestOpening_Meters', 'ForestOpeningID', 'DistanceToForestEdge_Meters',
+                               'ForestEdgeID']
+
+
+            # Subset to the fields of interest
+            dfToAppend = inDF[appendFieldList]
+
+            dfToAppend = dfToAppend.rename(columns={'MeasuredDateHabitat': 'MeasuredDate'})
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            dfToAppend['MergedDate'] = iso_date
+
+
+            ########
+            # Define the NestTreeSurveyID via lookup on the tblNestTreeSurvey table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblNestTreeSurvey.* FROM tblNestTreeSurvey;"
+            dfNestTreeSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the NestTreeID via join on the 'SiteName' fields
+            outDFwNestTreeSurveyID = dfToAppend.merge(
+                dfNestTreeSurvey[['ID', 'GlobalID']],
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'NestTreeSurvey'
+            outDFwNestTreeSurveyID = outDFwNestTreeSurveyID.drop(
+                columns=['GlobalID']).rename(
+                columns={'ID': 'NestTreeSurveyID'})
+
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFwNestTreeSurveyIDCleanded = outDFwNestTreeSurveyID.replace([np.nan, 'nan', ''], None)
+
+
+            # Grab all column names from the dataframe
+            cols = outDFwNestTreeSurveyIDCleanded.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblHabitatFeatures ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeSurveyIDCleanded, "tblHabitatFeatures",
+                                            insertQuery, dmInstance)
+
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_NestTreeFeatures(inDF, etlInstance, dmInstance):
+        """
+        Routine to process Nest Survey records and info being pushed to the tblNestTreeFeatures table
+
+        :param inDF -  Dataframe with the Nest Survey records
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            appendFieldList = ['GlobalID', 'MeasuredDateTreeNestFeatures', 'IsTreeAlive', 'IsTreeTagged',
+                               'TreeTagNumber', 'TreeHeight_Meters', 'DiameterBreastHeight_cm', 'NestTypeID',
+                               'NestHeight_Meters', 'NestDescription']
+
+            # Subset to the fields of interest
+            dfToAppend = inDF[appendFieldList]
+
+            dfToAppend = dfToAppend.rename(columns={'MeasuredDateTreeNestFeatures': 'MeasuredDate'})
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            dfToAppend['MergedDate'] = iso_date
+
+            ########
+            # Define the NestTreeSurveyID via lookup on the tblNestTreeSurvey table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblNestTreeSurvey.* FROM tblNestTreeSurvey;"
+            dfNestTreeSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the NestTreeID via join on the 'SiteName' fields
+            outDFwNestTreeSurveyID = dfToAppend.merge(
+                dfNestTreeSurvey[['ID', 'GlobalID']],
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'NestTreeSurvey'
+            outDFwNestTreeSurveyID = outDFwNestTreeSurveyID.drop(
+                columns=['GlobalID']).rename(
+                columns={'ID': 'NestTreeSurveyID'})
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFwNestTreeSurveyIDCleanded = outDFwNestTreeSurveyID.replace([np.nan, 'nan', ''], None)
+
+
+            # Grab all column names from the dataframe
+            cols = outDFwNestTreeSurveyIDCleanded.columns.tolist()
+
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblNestTreeFeatures ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFwNestTreeSurveyIDCleanded, "tblNestTreeFeatures",
+                                            insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_OverUnderStory(inDF, etlInstance, dmInstance):
+
+        """
+        Routine to process Nest Survey records and info being pushed to the tblUnderStoryVegetation and
+        tblUnderStoryVegetation tables.
+
+        :param inDF -  Dataframe with the Nest Survey records
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            appendFieldList = ['GlobalID', 'OverstoryID', 'UnderstoryID']
+
+            # Subset to the fields of interest
+            dfToAppend = inDF[appendFieldList]
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            dfToAppend['MergedDate'] = iso_date
+
+            ########
+            # Define the NestTreeSurveyID via lookup on the tblNestTreeSurvey table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblNestTreeSurvey.* FROM tblNestTreeSurvey;"
+            dfNestTreeSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the NestTreeID via join on the 'SiteName' fields
+            outDFwNestTreeSurveyID = dfToAppend.merge(
+                dfNestTreeSurvey[['ID', 'GlobalID']],
+                left_on='GlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'NestTreeSurvey'
+            outDFwNestTreeSurveyID = outDFwNestTreeSurveyID.drop(
+                columns=['GlobalID']).rename(
+                columns={'ID': 'NestTreeSurveyID'})
+
+            # Exploded the 'OverStoryID', 'UnderStoryID' fields to stacked records per value exploded on the comma delimited
+            # fields
+
+            dfOverStory = outDFwNestTreeSurveyID.drop(columns=['UnderstoryID'])
+            dfOverStory['OverstoryID'] = dfOverStory['OverstoryID'].str.split(r'\s*,\s*', regex=True)
+            dfOverStory = dfOverStory.explode('OverstoryID').reset_index(drop=True)
+            dfOverStoryFinal = dfOverStory[dfOverStory['OverstoryID'].notna() & (dfOverStory['OverstoryID'] != '')]
+
+            dfUnderStory = outDFwNestTreeSurveyID.drop(columns=['OverstoryID'])
+            dfUnderStory['UnderstoryID'] = dfUnderStory['UnderstoryID'].str.split(r'\s*,\s*', regex=True)
+            dfUnderStory = dfUnderStory.explode('UnderstoryID').reset_index(drop=True)
+            dfUnderStoryFinal = dfUnderStory[dfUnderStory['UnderstoryID'].notna() & (dfUnderStory['UnderstoryID'] != '')]
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            dfOverStoryFinalCleaned = dfOverStoryFinal.replace([np.nan, 'nan', ''], None)
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            dfUnderStoryFinalCleaned = dfUnderStoryFinal.replace([np.nan, 'nan', ''], None)
+
+
+            ### Append Understory
+            # Grab all column names from the dataframe
+            cols = dfUnderStoryFinalCleaned.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblUnderstoryVegetation ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, dfUnderStoryFinalCleaned, "tblUnderstoryVegetation",
+                                            insertQuery, dmInstance)
+
+
+            #### Append Overstory
+            # Grab all column names from the dataframe
+            cols = dfOverStoryFinalCleaned.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblOverstoryVegetation ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, dfOverStoryFinalCleaned, "tblOverstoryVegetation",
+                                            insertQuery, dmInstance)
+
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
