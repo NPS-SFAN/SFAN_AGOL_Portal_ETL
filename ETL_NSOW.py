@@ -54,13 +54,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,7 +68,7 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
 
             ####
@@ -76,35 +76,38 @@ class etl_NSOW:
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
             # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed
             ######
 
-            #etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
-            # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - In Process - STOPPED HERE 2026/8/13
+            # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
             etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
 
 
-
-            # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3  - To Do
-            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
-
-
-
             ############################
-            # Process Species Detections - speciesdetectionrepeat_2.csv - TO DO
+            # Process Species Detections - speciesdetectionrepeat_2.csv - In Process
             ############################
+
+            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
+
 
             ############################
             # Process Other Species  - otherrspecies_3.csv - To DO
             ############################
+
+            #####################
+            # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3  - To Do
+            #####################
+
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
 
 
 
@@ -928,7 +931,7 @@ class etl_NSOW:
             # Define the SiteID via lookup on the RefSite table
             ########
 
-            # Define the EventID via the ParentGlobalID field
+            # Define the SiteID via the ParentGlobalID field
             # Read in the tblEventSurvey table
             inQuery = f"SELECT refSite.* FROM refSite;"
             dfRefSite = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
@@ -1182,7 +1185,7 @@ class etl_NSOW:
             logMsg = (f'Successfully Processed all Methods for Nest Tree Surveys - tblNestTreeSurvey, tblHabitatFeatures,\n'
                       f'tblNestTreeFeatures, tblOverStory and tblUnderstory')
 
-            porint(logMsg)
+            print(logMsg)
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
@@ -1529,6 +1532,125 @@ class etl_NSOW:
             dm.generalDMClass.appendDataSet(cnxn, dfOverStoryFinalCleaned, "tblOverstoryVegetation",
                                             insertQuery, dmInstance)
 
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_SpeciesDetections(outDFDic, etlInstance, dmInstance):
+
+        """
+        Routine to process the Species Detections repeat in the 'speciesdetectionrepeat_2.csv' table
+
+        :param outDFDic -  Dictionary with all imported dataframes from the imported feature layer
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'speciesdetection' in key:
+                    inDF = df
+                    break
+
+            # Create initial dataframe subset
+            outDFSubset = inDF.drop(
+                columns={'ObjectID', 'GlobalID'})
+
+            # TailTipColorID.1 - was an inadvertent duplicate definition - this is the DTectionTypeID field
+            outDFSubset = outDFSubset.rename(
+                columns={'CoordinateMethod': 'CoordinateMethodID',
+                         'CoordinateSystem': 'CoordinateSystemID',
+                         'UTM_Easting': 'UTME',
+                         'UTM_Northing': 'UTMN',
+                         'UTM_Zone':'UTMZone',
+                         'TailTipColorID.1': 'DetectionTypeID',
+                         'SpeciesDetectionNote': 'DetectionNote'})
+
+            ####
+            # Clean Up munging
+            ###
+
+            # Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            outDFSubset['MergedDate'] = iso_date
+
+            # If CoordinateMethodID is null set to 1
+            outDFSubset['CoordinateMethodID'] = outDFSubset['CoordinateMethodID'].fillna(1)
+
+            ########
+            # Define the EventSurveyID via lookup on the tblEventSurvey table
+            ########
+
+            # Define the SiteID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define EventID
+            outDFSubsetwEventID = outDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'ID']],
+                left_on='ParentGlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            outDFSubsetwEventID = outDFSubsetwEventID.drop(
+                columns=['GlobalID', 'ParentGlobalID', 'CreationDate', 'Creator', 'EditDate', 'Editor']).rename(
+                columns={'ID': 'EventSurveyID'})
+
+            # If GPSUnit is not defined set to Unknown (i.e. 5).
+            outDFSubsetwEventID['GPSUnitID'] = outDFSubsetwEventID['GPSUnitID'].fillna(5)
+
+            # BandColord Version 2026.1-.3 was misssing the BandColor field
+            if 'BandColor' in outDFSubsetwEventID.columns:  # If None/Null set to None (i.e. 12)
+                outDFSubsetwEventID['BandColorID'] = outDFSubsetwEventID['BandColorID'].fillna(12)
+            else: # Add the required BandColor field if not present - set to None (i.e. 12).
+                outDFSubsetwEventID['BandColorID'] = 12
+
+
+            #######
+            # Define the Lat/Lon or UTM values as needed via GeoPandas
+            ########
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outDFSubsetwEventIDCleaned = outDFSubsetwEventID.replace([np.nan, 'nan', ''], None)
+
+            ##########
+            # Define missing Lat/Lon or UTMS values using the coordinates that were defined in the survey
+            ##########
+
+            outDFSubsetwCoords = processGeospatialPoints(outDFSubsetwEventIDCleaned, etlInstance, dmInstance)
+
+            # Temporary - If EventSurveyID is Null Drop Records - Only necessary because of 2026v1 v2 append issues - removed post development.
+            outDFSubsetwCoordsToAppend = outDFSubsetwCoords[outDFSubsetwCoords['EventSurveyID'].notna()]
+
+            ### Append Species Detection Records
+            # Grab all column names from the dataframe
+            cols = outDFSubsetwCoordsToAppend.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblSpeciesDetection ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFSubsetwCoordsToAppend, "tblSpeciesDetection",
+                                            insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
