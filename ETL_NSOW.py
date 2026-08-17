@@ -54,13 +54,13 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
             ####
 
-            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,40 +68,42 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
-
+            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
             ####
             # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
             # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed
             ######
 
-            etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
-            etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
 
 
             ############################
             # Process Species Detections - speciesdetectionrepeat_2.csv - In Process
             ############################
 
-            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
 
 
             ############################
             # Process Other Species  - otherrspecies_3.csv - To DO
             ############################
+
+            # etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
+
 
             #####################
             # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3  - To Do
@@ -1650,6 +1652,80 @@ class etl_NSOW:
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSubsetwCoordsToAppend, "tblSpeciesDetection",
+                                            insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+    def process_OtherSpecies(outDFDic, etlInstance, dmInstance):
+        """
+        Routine to process Other Species Present in form table - otherrspecies_3.csv.
+        Data is processed to the 'tblOtherSpeciesPresent' table.
+
+        :param inDF -  Dataframe with the Nest Survey records
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+            for key, df in outDFDic.items():
+                if 'otherrspecies' in key:
+                    inDF = df
+                    break
+
+            appendFieldList = ['TaxonID', 'TaxonRefAuthorityID', 'ParentGlobalID']
+
+            # Subset to the fields of interest
+            dfToAppend = inDF[appendFieldList]
+
+            ########
+            # Define the EventSurveyID via lookup on the tblEventSurvey table
+            ########
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the NestTreeID via join on the 'SiteName' fields
+            outOtherSpeciesToAppend = dfToAppend.merge(
+                dfEventSurvey[['ID', 'GlobalID']],
+                left_on='ParentGlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'NestTreeSurvey'
+            outOtherSpeciesToAppend = outOtherSpeciesToAppend.drop(
+                columns=['GlobalID', 'ParentGlobalID']).rename(
+                columns={'ID': 'EventSurveyID'})
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            outOtherSpeciesToAppendCleaned = outOtherSpeciesToAppend.replace([np.nan, 'nan', ''], None)
+
+            # Grab all column names from the dataframe
+            cols = outOtherSpeciesToAppendCleaned.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (f"INSERT INTO tblOtherSpeciesPresent ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outOtherSpeciesToAppendCleaned, "tblOtherSpeciesPresent",
                                             insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
