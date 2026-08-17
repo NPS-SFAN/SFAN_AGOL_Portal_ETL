@@ -57,6 +57,12 @@ class etl_NSOW:
             etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ############################
+            # Process Species Detections - speciesdetectionrepeat_2.csv
+            ############################
+
+            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
+
+            ############################
             # Process Other Species  - otherrspecies_3.csv
             ############################
 
@@ -96,11 +102,6 @@ class etl_NSOW:
 
             etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
 
-            ############################
-            # Process Species Detections - speciesdetectionrepeat_2.csv
-            ############################
-
-            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
 
             #####################
             # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3
