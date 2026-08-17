@@ -69,7 +69,7 @@ class etl_NSOW:
             etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
-            # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
+            # Process the Observers Repeat table - Survey 123 table - observersrepeat_1
             # Check for output table - RecordsNSOSurveys_OtherObserverDefinitionNeeded_MonitoringSurvey_{DateHour}.csv
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
@@ -107,10 +107,6 @@ class etl_NSOW:
             #####################
 
             etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
-
-
-
-
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f"Success ETL_SNPLPORE.py - {func_name}"
@@ -437,6 +433,9 @@ class etl_NSOW:
         :param surveyType: Variable defines if processing is for MonitoringSurvey or NestSurvey (
 
         :return
+
+        Updates: 8/17/2026 - Update logic to handle Monitoring and Nest Survey Observer field schema names.
+
         """
 
         try:
@@ -446,8 +445,12 @@ class etl_NSOW:
             # If Monitoring Survey Process the Observers Repeat
             if surveyType == 'MonitoringSurvey':
                 for key, df in outDFDic.items():
-                    if 'observersrepeat' in key:
+                    if 'observersrepeat_1' in key:
                         inDF = df
+
+                        # Create initial dataframe subset
+                        outDFSubset = inDF[['PersonnelID', 'PersonnelRoleID', 'OtherObserver', 'OtherObserverRole',
+                                            'ParentGlobalID']]
                         break
 
             # If Monitoring Survey Process the Nest Observers Repeat
@@ -455,11 +458,18 @@ class etl_NSOW:
                 for key, df in outDFDic.items():
                     if 'observersrepeatnestsurvey' in key:
                         inDF = df
+
+                        # Create initial dataframe subset
+                        outDFSubset = inDF[['PersonnelIDNestSurvey', 'PersonnelRoleIDNestSurvey', 'OtherObserverNestSurvey', 'OtherObserverRoleNestSurvey',
+                                            'ParentGlobalID']]
+
+                        outDFSubset = outDFSubset.rename(columns={'OtherObserverNestSurvey': 'OtherObserver',
+                                                                  'OtherObserverRoleNestSurvey': 'OtherObserverRole',
+                                                                  'PersonnelIDNestSurvey': 'PersonnelID'})
+
                         break
 
-            # Create initial dataframe subset
-            outDFSubset = inDF[['PersonnelID', 'PersonnelRoleID', 'OtherObserver', 'OtherObserverRole',
-                                 'ParentGlobalID']]
+
 
             ##############################
             # Numerous Field CleanUp Steps
@@ -720,6 +730,10 @@ class etl_NSOW:
         :param dmInstance: Data Management instance
 
         :return
+
+        :Updates
+        8/17/2026 - Add logic to handle explode if EvidenceID is single value and imports as Integer rather then string.
+
         """
 
         try:
@@ -743,6 +757,13 @@ class etl_NSOW:
 
             #Sub to records with Evidence
             inDFAppendSubset = inDFAppend[inDFAppend['EvidenceID'].notna()].copy()
+
+            # If Multi-part Evidence will be String, if single value will import a Integer - set to String workflow
+            # handles exploding if needed
+            from pandas.api.types import is_numeric_dtype
+            if is_numeric_dtype(inDFAppendSubset['EvidenceID']):
+                inDFAppendSubset['EvidenceID'] = inDFAppendSubset['EvidenceID'].astype('string')  # pandas StringDtype, preserves NA
+
 
             # Explode to stacked format
             inDFEvidence = (
@@ -858,11 +879,13 @@ class etl_NSOW:
             logging.critical(logMsg, exc_info=True)
 
 
-    def processStatusIndicators(outDFDic, etlInstance, dmInstance):
+    def processStatusIndicators(fieldList, inDF, etlInstance, dmInstance):
         """
-        ETL to process the the inventorycallrepeat_5.csv table.  Data is processed to the
-        tblCallPointResponse table.
+        ETL to process the tblStatusIndicators table attributes. Exploding the multi-select comma delimited field into a stacked        ETL to process the tblStatusIndicators table attributes. Exploding the multi-select comma delimited field into a stacked
+        format.
 
+        :param fieldList - 'List of fields to be processed in the 'inDF' dataframe
+        :param inDF - data frame being processed
         :param etlInstance - etl instance
         :param dmInstance: Data Management instance
 
@@ -870,43 +893,28 @@ class etl_NSOW:
         """
 
         try:
-
-            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-
-            # Import the Inventory Call table
-            for key, df in outDFDic.items():
-                if 'inventorycallrepeat' in key:
-                    inDF = df
-                    break
-
-            # Subset to the Needed Fields
-            outDFSubset = inDF[['GlobalID', 'CallPointID', 'Call Point Number', 'TimeStart', 'TimeEnd', 'MinutesTotal', 'IsResponse',
-                                'ParentGlobalID']]
-
-            # Define the EventID via the ParentGlobalID field
             # Read in the tblEventSurvey table
             inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
             dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
-            # Define the EventSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
-            inDFAppend = outDFSubset.merge(
+            # Subset to the fieldList
+            inDFSubset = inDF[[col for col in fieldList if col in inDF.columns]]
+
+            # Define the EvenetSurveyID via join on the 'GlobalID' field
+            inDFAppend = inDFSubset.merge(
                 dfEventSurvey[['GlobalID', 'ID']],
-                left_on='ParentGlobalID',
-                right_on='GlobalID',
+                on='GlobalID',
                 how='left')
 
             # Rename ID field to 'EventSurveyID' and drop unneeded fields
-            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID', 'Call Point Number']).rename(
+            inDFAppend = inDFAppend.drop(columns=['GlobalID']).rename(
                 columns={'ID': 'EventSurveyID'})
 
+            # Sub to records with wit only StatusIndicator values
+            cols_to_check = [c for c in inDFAppend.columns if c != 'EventSurveyID']
+            inDFAppendFinalwData = inDFAppend.dropna(subset=cols_to_check, how='all')
 
-
-            #Sub to records with data aonly values
-            cols_to_check = [c for c in inDFAppendFinal.columns if c != 'EventSurveyID']
-            inDFAppendFinalwData = inDFAppendFinal.dropna(subset=cols_to_check, how='all')
-
-            #Add 'MergedDate' field with date/time now
+            # Add 'MergedDate' field with date/time now
             now = datetime.now()
             iso_date = now.strftime("%Y-%m-%d")
             inDFAppendFinalwData['MergedDate'] = iso_date
@@ -924,7 +932,7 @@ class etl_NSOW:
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblCallPointResponse",
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblStatusIndicators",
                                             insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
@@ -936,10 +944,6 @@ class etl_NSOW:
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
-            logging.critical(logMsg, exc_info=True)
-
-
-
 
 
     def process_NewTreeNest(outDFDic, etlInstance, dmInstance):
@@ -1567,12 +1571,25 @@ class etl_NSOW:
             # Exploded the 'OverStoryID', 'UnderStoryID' fields to stacked records per value exploded on the comma delimited
             # fields
 
+            from pandas.api.types import is_numeric_dtype
+
             dfOverStory = outDFwNestTreeSurveyID.drop(columns=['UnderstoryID'])
+
+            # If not Multi-Items will import as Integer - convert to String to support multi-item workflow
+            if is_numeric_dtype(dfOverStory['OverstoryID']):
+                dfOverStory['OverstoryID'] = dfOverStory['OverstoryID'].astype('string')  # pandas StringDtype, preserves NA
+
+
             dfOverStory['OverstoryID'] = dfOverStory['OverstoryID'].str.split(r'\s*,\s*', regex=True)
             dfOverStory = dfOverStory.explode('OverstoryID').reset_index(drop=True)
             dfOverStoryFinal = dfOverStory[dfOverStory['OverstoryID'].notna() & (dfOverStory['OverstoryID'] != '')]
 
             dfUnderStory = outDFwNestTreeSurveyID.drop(columns=['OverstoryID'])
+
+            # If not Multi-Items will import as Integer - convert to String to support multi-item workflow
+            if is_numeric_dtype(dfUnderStory['UnderstoryID']):
+                dfUnderStory['UnderstoryID'] = dfUnderStory['UnderstoryID'].astype('string')
+
             dfUnderStory['UnderstoryID'] = dfUnderStory['UnderstoryID'].str.split(r'\s*,\s*', regex=True)
             dfUnderStory = dfUnderStory.explode('UnderstoryID').reset_index(drop=True)
             dfUnderStoryFinal = dfUnderStory[dfUnderStory['UnderstoryID'].notna() & (dfUnderStory['UnderstoryID'] != '')]
