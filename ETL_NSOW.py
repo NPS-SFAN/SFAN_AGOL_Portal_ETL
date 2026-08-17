@@ -51,16 +51,22 @@ class etl_NSOW:
         try:
 
             ######
-            # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table - DONE 8/6/2026
+            # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
-            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+
+            ############################
+            # Process Other Species  - otherrspecies_3.csv
+            ############################
+
+            etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
 
             ####
-            # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4 - DONE 8/6/2026
+            # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4
             ####
 
-            #etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processMouseOffer(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process the Observers Repeat table - Survey 123 table - observersrepeat_1 - Done 8/11/2026
@@ -68,45 +74,36 @@ class etl_NSOW:
             # with Other Observers that need to be added to the tblEventPersonnel table post ETL processing.
             ####
 
-            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
+            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="MonitoringSurvey")
 
             ####
             # Process Inventory Call Response table - Survey 123 table - inventorycallrepeat_5
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
             # Nest Tree Survey so the new tree is in the database when Nest Surveys are performed
             ######
 
-            #etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_NewTreeNest(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process Nest Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
-            #etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
-
-
-            ############################
-            # Process Species Detections - speciesdetectionrepeat_2.csv - In Process
-            ############################
-
-            #etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
-
+            etl_NSOW.process_NestSurveys(outDFDic, etlInstance, dmInstance)
 
             ############################
-            # Process Other Species  - otherrspecies_3.csv - To DO
+            # Process Species Detections - speciesdetectionrepeat_2.csv
             ############################
 
-            # etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
-
+            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
 
             #####################
-            # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3  - To Do
+            # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3
             #####################
 
             etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
@@ -487,7 +484,6 @@ class etl_NSOW:
                 how='left')
 
 
-
             # Rename ID field to 'EventSurveyID' and drop unneeded fields
             inDFAppend = inDFAppend.drop(columns=['ParentGlobalID']).rename(
                 columns={'ID': 'EventSurveyID'})
@@ -825,6 +821,85 @@ class etl_NSOW:
             inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID', 'Call Point Number']).rename(
                 columns={'ID': 'EventSurveyID'})
 
+            #Sub to records with data aonly values
+            cols_to_check = [c for c in inDFAppendFinal.columns if c != 'EventSurveyID']
+            inDFAppendFinalwData = inDFAppendFinal.dropna(subset=cols_to_check, how='all')
+
+            #Add 'MergedDate' field with date/time now
+            now = datetime.now()
+            iso_date = now.strftime("%Y-%m-%d")
+            inDFAppendFinalwData['MergedDate'] = iso_date
+
+            # Grab all column names from the dataframe
+            cols = inDFAppendFinalwData.columns.tolist()
+
+            # Update any 'nan' string or np.nan values to None to consistently handle null values.
+            pd.set_option('mode.copy_on_write', False)
+            inDFAppendFinalwData = inDFAppendFinalwData.replace([np.nan, 'nan', ''], None)
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tblCallPointResponse ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblCallPointResponse",
+                                            insertQuery, dmInstance)
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'Success Method - {func_name}'
+            logging.info(logMsg, exc_info=True)
+            print(logMsg)
+
+        except Exception as e:
+
+            func_name = inspect.currentframe().f_code.co_name
+            logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
+            logging.critical(logMsg, exc_info=True)
+
+
+    def processStatusIndicators(outDFDic, etlInstance, dmInstance):
+        """
+        ETL to process the the inventorycallrepeat_5.csv table.  Data is processed to the
+        tblCallPointResponse table.
+
+        :param etlInstance - etl instance
+        :param dmInstance: Data Management instance
+
+        :return
+        """
+
+        try:
+
+            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            inDF = None
+
+            # Import the Inventory Call table
+            for key, df in outDFDic.items():
+                if 'inventorycallrepeat' in key:
+                    inDF = df
+                    break
+
+            # Subset to the Needed Fields
+            outDFSubset = inDF[['GlobalID', 'CallPointID', 'Call Point Number', 'TimeStart', 'TimeEnd', 'MinutesTotal', 'IsResponse',
+                                'ParentGlobalID']]
+
+            # Define the EventID via the ParentGlobalID field
+            # Read in the tblEventSurvey table
+            inQuery = f"SELECT tblEventSurvey.* FROM tblEventSurvey;"
+            dfEventSurvey = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+            # Define the EventSurveyID via join on the 'GlobalID' and 'ParentGlobalID' fields
+            inDFAppend = outDFSubset.merge(
+                dfEventSurvey[['GlobalID', 'ID']],
+                left_on='ParentGlobalID',
+                right_on='GlobalID',
+                how='left')
+
+            # Rename ID field to 'EventSurveyID' and drop unneeded fields
+            inDFAppendFinal = inDFAppend.drop(columns=['GlobalID_x', 'GlobalID_y', 'ParentGlobalID', 'Call Point Number']).rename(
+                columns={'ID': 'EventSurveyID'})
+
 
 
             #Sub to records with data aonly values
@@ -862,6 +937,10 @@ class etl_NSOW:
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'WARNING ERROR  - ETL_NSOW.py - {func_name}: {e}'
             logging.critical(logMsg, exc_info=True)
+
+
+
+
 
     def process_NewTreeNest(outDFDic, etlInstance, dmInstance):
 
