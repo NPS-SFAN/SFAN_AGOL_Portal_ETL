@@ -66,7 +66,7 @@ class etl_NSOW:
             # Process Other Species  - otherrspecies_3.csv
             ############################
 
-            etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4
@@ -179,11 +179,9 @@ class etl_NSOW:
             # Insert 'DataProcesingLevelID' = 1
             outDFSubset.insert(fieldLen, "DataProcessingLevelID", 1)
 
-
             # Owl Call Simulated if yes set to 1 else 0.
             outDFSubset['IsOwlCallSimulated'] = (
-                    outDFSubset['IsOwlCallSimulated'].str.strip().str.lower() == 'yes'
-            ).astype(int)
+                    outDFSubset['IsOwlCallSimulated'].str.strip().str.lower() == 'yes').astype(int)
 
 
             # Insert 'dataProcesingLevelDate
@@ -207,7 +205,6 @@ class etl_NSOW:
             # Drop SiteName post definition of SiteID
             outDFSubset =outDFSubset.drop(columns=['SiteName'])
 
-
             ### MousePurposeID - If 'IsMousingPerformed' is no (i.e. 2) set 'MousePurposeID' to 4 - No Mousing
             outDFSubset.loc[outDFSubset['IsMousingPerformed'] == 2, 'MousePurposeID'] = 4
 
@@ -223,13 +220,13 @@ class etl_NSOW:
             outDFSubset = outDFSubset.replace([np.nan, 'nan'], None)
 
             # If field IsNestViewAdquqate is null set to 5 (i.e Not Recorded - NR)
+
             outDFSubset['IsNestViewAdequate'] = outDFSubset['IsNestViewAdequate'].fillna(5).astype('Int64')
 
             ########
             # Append to tbl_EventSurvey
             ########
             ## Remove Fields that aren't in event survey table
-
             fieldListDrop = ['CallStartTime', 'CallMethodID', 'WindTypeID', 'PercipitationTypeID',
                              'Temperature_F', 'CloudsPercentage', 'LightTypeID', 'EvidenceID', 'NonNestingIndicatorID',
                              'NestingIndicatorID', 'ReproductionID']
