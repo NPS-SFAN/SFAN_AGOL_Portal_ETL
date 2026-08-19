@@ -1,3 +1,6 @@
+# Branch specifically modified to import the NSOW 2026v1.2 schema - 20260819
+
+
 # SFAN_AGOL_Portal ETL
 San Francisco Bay Area Network AGOL and Portal Extract Transform and Load routines.  
 As of 2/15/2026 - Snowy Plover PORE ETL workflow has been developed, updates for Nest Photos and Nest Summary added - KRS.\
