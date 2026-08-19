@@ -19,7 +19,7 @@ As of 5/23/2025 - Pinnipeds Elephant Seal ETL workflow developed. May 2026 Updat
 As of 6/3/2025 - Salmonids Smolts ETL workflow developed - 6/10/2026 - updated Counts to summarize by EventID, Species,
 Lifeform to summarize when multiple surveys at trap on the same day/event.  Additionally updates to handle QC Validation
  for 'LengthCategoryID', 'FishWeight' validations.
-As of 6/22/2026 - Northern Spotted Owl ETL workflow - In Development
+As of 8/19/2026 - Northern Spotted Owl ETL workflow has been developed - KRS
 
 Output:
 Imported data from Survey 123 AGOL/Portal Feature Layers.
@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # Protocol/Item Being Processes
 protocol = 'NSOW'   # (SNPLPORE|Salmonids-EFish|Salmonids-Smolts|PCM-LocationsManual|PINN-Elephant|NSOW)
 # Access Backend Database for the protocol
-inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\workspace\SFAN_SpottedOwl_Master_BE_20260812 - Copy.accdb'
+inDBBE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_Master_BE_20260818w2026v1_2026v1_2_2026v1_3.accdb'
 inDBFE = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\SPOW_MainDB\SFAN_SpottedOwl_DB_FE_20260709.accdb'
 
 # Year Being Processed
@@ -68,7 +68,7 @@ inYear = 2026
 cloudPath = f"https://nps.maps.arcgis.com"   # AGOL: https://nps.maps.arcgis.com, New Portal: https://geospatial.nps.gov/portal
 
 # Feature Layer ID on ArcGIS OnLine or Portal to be ETL
-layerID = "1eca72b85d6f41438261f3b577400671"
+layerID = "0eaf489383664c8f90210582e0930b9e"
 
 # Define if using a OAuth2.0 credential or the credentials via the ArcGISPro Environment
 credentials = 'OAuth'    # ('OAuth'|'ArcGISPro')
