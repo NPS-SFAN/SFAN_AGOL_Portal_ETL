@@ -54,19 +54,19 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ############################
             # Process Species Detections - speciesdetectionrepeat_2.csv
             ############################
 
-            etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_SpeciesDetections(outDFDic, etlInstance, dmInstance)
 
             ############################
             # Process Other Species  - otherrspecies_3.csv
             ############################
 
-            #etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4
@@ -87,7 +87,8 @@ class etl_NSOW:
             # Use ParentGlobalID - to join on the GlobalID in the tblEventSurvey to get the EventSurveyID in tblCallPointResponse
             ####
 
-            etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
+            # No Inventory Call in version 2026v1.2
+            #etl_NSOW.processInventoryCall(outDFDic, etlInstance, dmInstance)
 
             ######
             # Process New Tree Nest  - in the SFAN_NSOW_AGOL_{YearVersion}- table - these should be done prior to the
@@ -107,7 +108,8 @@ class etl_NSOW:
             # Process Nest Survey Observations in the 'observersrepeatnestsurvey' table - starting in 2026v1.3
             #####################
 
-            etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
+            # Nest observer Repeat not in version 2026v1.2
+            #etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f"Success ETL_SNPLPORE.py - {func_name}"
@@ -140,12 +142,19 @@ class etl_NSOW:
         """
 
         try:
-            # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'SFAN_NSOW' in key:
-                    inDF = df
-                    break
+            # # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'SFAN_NSOW' in key:
+            #         inDF = df
+            #         break
+
+            #####Read Survey Data Directly from Access DB
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT SFAN_NSOW_AGOL_2026v1_2Subset.* FROM SFAN_NSOW_AGOL_2026v1_2Subset;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
 
 
             # Subset to Only the 'Monitoring Survey' events -
@@ -213,7 +222,8 @@ class etl_NSOW:
                               'OrganizationID', 'EventPurposeID', 'ProtocolConfigurationID']
 
             cols = [c for c in fieldListToInt if c in outDFSubset.columns]
-            outDFSubset[cols] = df[cols].astype('Int64')
+            for c in cols:
+                outDFSubset[c] = pd.to_numeric(outDFSubset[c], errors='coerce').astype('Int64')
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             pd.set_option('mode.copy_on_write', False)
@@ -336,17 +346,23 @@ class etl_NSOW:
 
         try:
             # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'mouseoffering' in key:
-                    inDF = df
-                    break
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'mouseoffering' in key:
+            #         inDF = df
+            #         break
 
+            #####Read Survey Data Directly from Access DB
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
 
-            inDF2 = inDF.rename(columns={'OwlSexID.1': 'OwlAgeID'}) #OwlSexID.1 was inadvertently defined as 'OwlSexID' in the Survey 'bind::esri::fieldAlias' field hence the two 'OwlSexID' fields.
+            inQuery = f"SELECT mouseofferingrepeat_4.* FROM mouseofferingrepeat_4;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
+
+            #####inDF2 = inDF.rename(columns={'OwlSexID.1': 'OwlAgeID'}) #OwlSexID.1 was inadvertently defined as 'OwlSexID' in the Survey 'bind::esri::fieldAlias' field hence the two 'OwlSexID' fields.
 
             # Create initial dataframe subset
-            outDFSubset = inDF2[['GlobalID', 'TimeOut', 'TimeTaken', 'MouseFateID', 'FateTime', 'OwlSexID',
+            outDFSubset = inDF[['GlobalID', 'TimeOut', 'TimeTaken', 'MouseFateID', 'FateTime', 'OwlSexID',
                                               'OwlAgeID', 'BehaviorNotes', 'ParentGlobalID']]
 
             ##############################
@@ -442,32 +458,28 @@ class etl_NSOW:
 
             # If Monitoring Survey Process the Observers Repeat
             if surveyType == 'MonitoringSurvey':
-                for key, df in outDFDic.items():
-                    if 'observersrepeat_1' in key:
-                        inDF = df
+                #####Read Survey Data Directly from Access DB
+                inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
 
-                        # Create initial dataframe subset
-                        outDFSubset = inDF[['PersonnelID', 'PersonnelRoleID', 'OtherObserver', 'OtherObserverRole',
-                                            'ParentGlobalID']]
-                        break
+                inQuery = f"SELECT observersrepeat_1_2026v1_2Subset.* FROM observersrepeat_1_2026v1_2Subset;"
 
-            # If Monitoring Survey Process the Nest Observers Repeat
+                inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
+
+                # Create initial dataframe subset
+                outDFSubset = inDF[['PersonnelID', 'PersonnelRoleID', 'OtherObserver', 'OtherObserverRole',
+                                    'ParentGlobalID']]
+
+
+            # If Monitoring Survey Process the Nest Observers Repeat - wont be hit with Survey 2026v1.2
             if surveyType == 'NestSurvey':
-                for key, df in outDFDic.items():
-                    if 'observersrepeatnestsurvey' in key:
-                        inDF = df
 
-                        # Create initial dataframe subset
-                        outDFSubset = inDF[['PersonnelIDNestSurvey', 'PersonnelRoleIDNestSurvey', 'OtherObserverNestSurvey', 'OtherObserverRoleNestSurvey',
-                                            'ParentGlobalID']]
+                # Create initial dataframe subset
+                outDFSubset = inDF[['PersonnelIDNestSurvey', 'PersonnelRoleIDNestSurvey', 'OtherObserverNestSurvey', 'OtherObserverRoleNestSurvey',
+                                    'ParentGlobalID']]
 
-                        outDFSubset = outDFSubset.rename(columns={'OtherObserverNestSurvey': 'OtherObserver',
-                                                                  'OtherObserverRoleNestSurvey': 'OtherObserverRole',
-                                                                  'PersonnelIDNestSurvey': 'PersonnelID'})
-
-                        break
-
-
+                outDFSubset = outDFSubset.rename(columns={'OtherObserverNestSurvey': 'OtherObserver',
+                                                          'OtherObserverRoleNestSurvey': 'OtherObserverRole',
+                                                          'PersonnelIDNestSurvey': 'PersonnelID'})
 
             ##############################
             # Numerous Field CleanUp Steps
@@ -703,7 +715,7 @@ class etl_NSOW:
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblEvents", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblWeather", insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
@@ -815,10 +827,18 @@ class etl_NSOW:
             inDF = None
 
             # Import the Inventory Call table
-            for key, df in outDFDic.items():
-                if 'inventorycallrepeat' in key:
-                    inDF = df
-                    break
+            # for key, df in outDFDic.items():
+            #     if 'inventorycallrepeat' in key:
+            #         inDF = df
+            #         break
+
+            #####Read Survey Data Directly from Access DB
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT Inventorycallrepeat_5.* FROM Inventorycallrepeat_5;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
+
 
             # Subset to the Needed Fields
             outDFSubset = inDF[['GlobalID', 'CallPointID', 'Call Point Number', 'TimeStart', 'TimeEnd', 'MinutesTotal', 'IsResponse',
@@ -960,11 +980,18 @@ class etl_NSOW:
 
         try:
             # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'SFAN_NSOW' in key:
-                    inDF = df
-                    break
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'SFAN_NSOW' in key:
+            #         inDF = df
+            #         break
+
+            #####Read Survey Data Directly from Access DB
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT SFAN_NSOW_AGOL_2026v1_2Subset.* FROM SFAN_NSOW_AGOL_2026v1_2Subset;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
 
             # Subset to Only the 'New Nest Tree' Records  -
             outDFSubsetInitial = inDF[(inDF['Event Type'] == 'NestSurvey') & (inDF['newtreeneeded'] == 'yes')]
@@ -1196,11 +1223,18 @@ class etl_NSOW:
         try:
 
             # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'SFAN_NSOW' in key:
-                    inDF = df
-                    break
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'SFAN_NSOW' in key:
+            #         inDF = df
+            #         break
+
+            #####Read Survey Data Directly from Access DB
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT SFAN_NSOW_AGOL_2026v1_2Subset.* FROM SFAN_NSOW_AGOL_2026v1_2Subset;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
 
             # Subset to Only the 'Monitoring Survey' events -
             outDFSubsetInitial = inDF[inDF['Event Type'] == 'NestSurvey']
@@ -1655,24 +1689,30 @@ class etl_NSOW:
 
         try:
 
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'speciesdetection' in key:
-                    inDF = df
-                    break
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'speciesdetection' in key:
+            #         inDF = df
+            #         break
+
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT speciesdetectionrepeat_2_2026v1_2Subset.* FROM speciesdetectionrepeat_2_2026v1_2Subset;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
+
 
             # Create initial dataframe subset
             outDFSubset = inDF.drop(
                 columns={'ObjectID', 'GlobalID'})
 
-            # TailTipColorID.1 - was an inadvertent duplicate definition - this is the DTectionTypeID field
+            # 2026v1.2 process renamed tailtip.1 to  DetectionTypeID field
             outDFSubset = outDFSubset.rename(
                 columns={'CoordinateMethod': 'CoordinateMethodID',
                          'CoordinateSystem': 'CoordinateSystemID',
                          'UTM_Easting': 'UTME',
                          'UTM_Northing': 'UTMN',
                          'UTM_Zone':'UTMZone',
-                         'TailTipColorID.1': 'DetectionTypeID',
                          'SpeciesDetectionNote': 'DetectionNote'})
 
             ####
@@ -1775,11 +1815,17 @@ class etl_NSOW:
         try:
 
             # Export the Survey Dataframe from Dictionary List - Wild Card in Key is *Survey*
-            inDF = None
-            for key, df in outDFDic.items():
-                if 'otherrspecies' in key:
-                    inDF = df
-                    break
+            # inDF = None
+            # for key, df in outDFDic.items():
+            #     if 'otherrspecies' in key:
+            #         inDF = df
+            #         break
+
+            inDBPathCLeaned = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\Imported\2026v1_2\CleanedV2\NSO_2026v1.2_2nd.accdb'
+
+            inQuery = f"SELECT otherrspecies_3.* FROM otherrspecies_3;"
+
+            inDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, inDBPathCLeaned)
 
             appendFieldList = ['TaxonID', 'TaxonRefAuthorityID', 'ParentGlobalID']
 
@@ -1810,6 +1856,9 @@ class etl_NSOW:
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             pd.set_option('mode.copy_on_write', False)
             outOtherSpeciesToAppendCleaned = outOtherSpeciesToAppend.replace([np.nan, 'nan', ''], None)
+
+            # Add to remove records without a defined EventSurveyID - Should only be need for 2026v1.2 process - one missing event needs trouble shooting.
+            outOtherSpeciesToAppendCleaned = outOtherSpeciesToAppendCleaned[outOtherSpeciesToAppendCleaned['EventSurveyID'].notna()]
 
             # Grab all column names from the dataframe
             cols = outOtherSpeciesToAppendCleaned.columns.tolist()
