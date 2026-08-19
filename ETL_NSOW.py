@@ -703,7 +703,7 @@ class etl_NSOW:
                 f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblEvents", insertQuery, dmInstance)
+            dm.generalDMClass.appendDataSet(cnxn, inDFAppendFinalwData, "tblWeather", insertQuery, dmInstance)
 
             func_name = inspect.currentframe().f_code.co_name
             logMsg = f'Success Method - {func_name}'
@@ -1665,15 +1665,26 @@ class etl_NSOW:
             outDFSubset = inDF.drop(
                 columns={'ObjectID', 'GlobalID'})
 
-            # TailTipColorID.1 - was an inadvertent duplicate definition - this is the DTectionTypeID field
+            # TailTipColorID.1 - was an inadvertent duplicate definition - this is the DetectionTypeID field
+            # outDFSubset = outDFSubset.rename(
+            #     columns={'CoordinateMethod': 'CoordinateMethodID',
+            #              'CoordinateSystem': 'CoordinateSystemID',
+            #              'UTM_Easting': 'UTME',
+            #              'UTM_Northing': 'UTMN',
+            #              'UTM_Zone':'UTMZone',
+            #              'TailTipColorID.1': 'DetectionTypeID',
+            #              'TailTipColorID_1': 'DetectionTypeID'
+            #              'SpeciesDetectionNote': 'DetectionNote'})
+
+            ###TURN ABOVE BACK on after importing 2026v1.2 KIRK TO DO
             outDFSubset = outDFSubset.rename(
-                columns={'CoordinateMethod': 'CoordinateMethodID',
-                         'CoordinateSystem': 'CoordinateSystemID',
-                         'UTM_Easting': 'UTME',
-                         'UTM_Northing': 'UTMN',
-                         'UTM_Zone':'UTMZone',
-                         'TailTipColorID.1': 'DetectionTypeID',
-                         'SpeciesDetectionNote': 'DetectionNote'})
+                columns = {'CoordinateMethod': 'CoordinateMethodID',
+                           'CoordinateSystem': 'CoordinateSystemID',
+                           'UTM_Easting': 'UTME',
+                           'UTM_Northing': 'UTMN',
+                           'UTM_Zone': 'UTMZone',
+                           'TailTipColorID_1': 'DetectionTypeID',
+                           'SpeciesDetectionNote': 'DetectionNote'})
 
             ####
             # Clean Up munging
