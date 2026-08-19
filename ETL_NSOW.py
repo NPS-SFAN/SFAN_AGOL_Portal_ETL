@@ -54,7 +54,7 @@ class etl_NSOW:
             # Process Monitoring Survey - in the SFAN_NSOW_AGOL_{YearVersion}- table
             ######
 
-            etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
+            #etl_NSOW.process_MonitoringSurvey(outDFDic, etlInstance, dmInstance)
 
             ############################
             # Process Species Detections - speciesdetectionrepeat_2.csv
@@ -66,7 +66,7 @@ class etl_NSOW:
             # Process Other Species  - otherrspecies_3.csv
             ############################
 
-            #etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
+            etl_NSOW.process_OtherSpecies(outDFDic, etlInstance, dmInstance)
 
             ####
             # Process tblMouseOffer table - Survey 123 table - mouseofferingrepeat_4
@@ -1666,25 +1666,16 @@ class etl_NSOW:
                 columns={'ObjectID', 'GlobalID'})
 
             # TailTipColorID.1 - was an inadvertent duplicate definition - this is the DetectionTypeID field
-            # outDFSubset = outDFSubset.rename(
-            #     columns={'CoordinateMethod': 'CoordinateMethodID',
-            #              'CoordinateSystem': 'CoordinateSystemID',
-            #              'UTM_Easting': 'UTME',
-            #              'UTM_Northing': 'UTMN',
-            #              'UTM_Zone':'UTMZone',
-            #              'TailTipColorID.1': 'DetectionTypeID',
-            #              'TailTipColorID_1': 'DetectionTypeID'
-            #              'SpeciesDetectionNote': 'DetectionNote'})
-
-            ###TURN ABOVE BACK on after importing 2026v1.2 KIRK TO DO
             outDFSubset = outDFSubset.rename(
-                columns = {'CoordinateMethod': 'CoordinateMethodID',
-                           'CoordinateSystem': 'CoordinateSystemID',
-                           'UTM_Easting': 'UTME',
-                           'UTM_Northing': 'UTMN',
-                           'UTM_Zone': 'UTMZone',
-                           'TailTipColorID_1': 'DetectionTypeID',
-                           'SpeciesDetectionNote': 'DetectionNote'})
+                columns={'CoordinateMethod': 'CoordinateMethodID',
+                         'CoordinateSystem': 'CoordinateSystemID',
+                         'UTM_Easting': 'UTME',
+                         'UTM_Northing': 'UTMN',
+                         'UTM_Zone':'UTMZone',
+                         'TailTipColorID.1': 'DetectionTypeID',
+                         'TailTipColorID_1': 'DetectionTypeID',
+                         'SpeciesDetectionNote': 'DetectionNote'})
+
 
             ####
             # Clean Up munging
