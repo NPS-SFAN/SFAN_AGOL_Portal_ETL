@@ -110,11 +110,11 @@ class etl_NSOW:
             etl_NSOW.processObservers(outDFDic, etlInstance, dmInstance, surveyType="NestSurvey")
 
             func_name = inspect.currentframe().f_code.co_name
-            logMsg = f"Success ETL_SNPLPORE.py - {func_name}"
+            logMsg = f"Success ETL_NSOW.py - {func_name}"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
-            outETL = "Success ETL SNPLPORE"
+            outETL = "Success ETL NSOW"
             return outETL
 
         except Exception as e:
