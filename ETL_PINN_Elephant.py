@@ -518,7 +518,7 @@ class etl_PINNElephant:
                     break
 
             outDFSubset = inDF[["Sub Site",	"Bull", "SA4","SA3", "SA2", "SA1", "Other SA", "Cow", "Pup", "Dead Pup",
-                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "Dead Pup Harbor", "ZALOPHUS", "Other",
+                                "WNR", "IMM", "YRLNG", "PHOCA", "PHOCA Pup", "PHOCA Pup Dead", "ZALOPHUS", "Other",
                                 "Define Other",
                                 "Specify other.", "Red Seal", "Shark Bite", "ParentGlobalID", "CreationDate"]].rename(
                 columns={"Sub Site": "LocationID",
@@ -1005,9 +1005,11 @@ class etl_PINNElephant:
 
             updateSealCountObservationSplitEvent(outUniqueEventsDF, etlInstance, dmInstance)
 
-
-            # Delete the Not Master Events - these have been migrated
-            outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
+            # Only need to delete not Master Events if multiple tablets
+            recCount = notMasterEventsFinal.shape[0]
+            if recCount >= 1:
+                # Delete the Not Master Events - these have been migrated
+                outFun = deleteNotMasterEvents(notMasterEventsFinal, etlInstance, dmInstance)
 
             logMsg = f'Success process_MultipleTabletEvents routine'
             logging.info(logMsg, exc_info=True)
@@ -2145,51 +2147,61 @@ def updateSealCountObservationSplitEvent(inDF, etlInstance, dmInstance):
         # Subset to only SealCountID fields
         recordsBeingAggregated = recordsToAggregate[['SealCountID']]
 
-        # Create the temp table with the DF in the DB
-        dm.generalDMClass.createTableFromDF(recordsBeingAggregated, tempTable, etlInstance.inDBBE)
+        # Get count of records being aggregated
+        recCount = recordsBeingAggregated.shape[0]
+        # Workflow if not records being aggregated skip this processing - In 2026 Molt no records to aggregate across
+        # multiple tables
+        if recCount >=1:
 
-        # Define the Delete Query
-        update_sql = (f'DELETE tblSealCount.* FROM tblSealCount INNER JOIN tmpTable_ETL ON tblSealCount.SealCountID = '
-                        f'tmpTable_ETL.SealCountID;')
+            # Create the temp table with the DF in the DB
+            dm.generalDMClass.createTableFromDF(recordsBeingAggregated, tempTable, etlInstance.inDBBE)
 
-        # Apply the Delete Query to the Access DB using the passed temp table
-        dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
+            # Define the Delete Query - delete the duplicate Records
+            update_sql = (f'DELETE tblSealCount.* FROM tblSealCount INNER JOIN tmpTable_ETL ON tblSealCount.SealCountID = '
+                            f'tmpTable_ETL.SealCountID;')
 
-        # Add note about Deleting Records
-        recCountDeleted = recordsBeingAggregated.shape[0]
+            # Apply the Delete Query to the Access DB using the passed temp table
+            dm.generalDMClass.excuteQuery(update_sql, etlInstance.inDBBE)
 
-        logMsg = f'For Split Event Deleted - {recCountDeleted} - records - from tblSealCount'
-        print(logMsg)
-        logging.info(logMsg)
+            # Add note about Deleting Records
+            logMsg = f'For Split Event Deleted - {recCount} - records - from tblSealCount'
+            print(logMsg)
+            logging.info(logMsg)
 
-        ###################################
-        # Lastly Append the new aggregated records
-        ###################################
+            ###################################
+            # Lastly Append the new aggregated records
+            ###################################
 
-        cols = recordsToAggregateAgg.columns.tolist()
+            cols = recordsToAggregateAgg.columns.tolist()
 
-        recCount = recordsToAggregateAgg.shape[0]
+            recCount = recordsToAggregateAgg.shape[0]
 
-        # Append to table
-        # Build the SQL query dynamically
-        insertQuery = (f"INSERT INTO tblSealCount ({', '.join(cols)}) "
-        f"VALUES ({', '.join(['?'] * len(cols))})")
+            # Append to table
+            # Build the SQL query dynamically
+            insertQuery = (f"INSERT INTO tblSealCount ({', '.join(cols)}) "
+            f"VALUES ({', '.join(['?'] * len(cols))})")
 
-        # Set all nan to None
-        recordsToAggregateAgg = recordsToAggregateAgg.replace([np.nan, 'nan'], None)
+            # Set all nan to None
+            recordsToAggregateAgg = recordsToAggregateAgg.replace([np.nan, 'nan'], None)
 
-        cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
-        dm.generalDMClass.appendDataSet(cnxn, recordsToAggregateAgg, "tblSealCount", insertQuery,
-                                                   dmInstance)
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, recordsToAggregateAgg, "tblSealCount", insertQuery,
+                                                       dmInstance)
 
-        recsAppended = recordsToAggregateAgg.shape[0]
-        logMsg = f'For Split Events just appended - {recsAppended} - Aggregated records - to tblSealCount'
-        print(logMsg)
-        logging.info(logMsg)
+            recsAppended = recordsToAggregateAgg.shape[0]
+            logMsg = f'For Split Events just appended - {recsAppended} - Aggregated records - to tblSealCount'
+            print(logMsg)
+            logging.info(logMsg)
 
-        logMsg = f'Successfully Update the Split Event Seal Count Records'
-        logging.info(logMsg)
-        print (logMsg)
+            logMsg = f'Successfully Update the Split Event Seal Count Records'
+            logging.info(logMsg)
+            print (logMsg)
+
+
+        else:
+            logMsg="No Record to Aggregate - method - updateSealCountObservationSplitEvent"
+            logging.info(logMsg)
+            print(logMsg)
 
         logMsg = f"Successfully completed ETL_PINN_ELephant.py - updateToMasterEventID"
         logging.info(logMsg)
