@@ -69,8 +69,8 @@ class generalArcGIS:
             # Use when developing - don't need to download the AGOl data each time
             elif etlInstance.AGOLDownload == 'No':
                 # Hard Code the Imported AGOL/Portal data when debuging - turn off lines 53-63 above - crude I know.
-                outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\SpottedOwl\SPOW_IM\Data\ETL\2026\SFAN_NSOW_AGOL_2026v1.3_20260819-112118.zip'
-                outName = 'SFAN_NSOW_AGOL_2026v1.3_20260819-112118'
+                outzipPath = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Molt_2026\SFAN_ElephantSeal_2026v1.0_20260831-150247.zip'
+                outName = 'SFAN_ElephantSeal_2026v1.0_20260831-150247'
 
             # Extract Exported zip file and import .csv files to DBF files
             dm.generalDMClass.unZipZip(zipPath=outzipPath, outName=outName,outDir=etlInstance.outDir)
@@ -175,18 +175,23 @@ class generalArcGIS:
             traceback.print_exc(file=sys.stdout)
 
 
-    def download_attachments_from_flc(gis, item_id, out_folder, layer_name, where="1=1", is_table=False):
+    def download_attachments_from_flc(gis, resightDFToProcess, item_id, out_folder, layer_name, where="1=1", is_table=False):
         """
         Download photo attachments from a layer OR table in a Feature Layer Collection.
 
         Added to handle processing of either Feature layer or Tables in a feature layer for Elephant Seal - 4/1/2026.
 
         :param gis: Authenticated GIS object
+        :param resightDFToProcess:  Dataframe with the Resight Photos to be imported.  Since multiple imports are done
+        annually (e.g. Breeding Season in March and then end of Season Molt Aug/Sept) we don't need to import all the
+        photos to avoid having duplicates.  All photo's will only be imported if the 'elephantSeason' variable 'All' is
+        defined.  The GlobalID in the resightDFToProcess is used to determine if the photo is download from AGOL.
         :param item_id: Hosted feature layer collection item ID
         :param out_folder: Output folder for photos
         :param layer_name: Layer/Table name
         :param where: SQL filter
         :param is_table: True = search in tables, False = search in layers
+
 
         :return: DataFrame of downloaded attachments
 
@@ -217,6 +222,16 @@ class generalArcGIS:
 
             rows = []
 
+            # Build a normalized set of GlobalID's to be processed - only import the GlobalID's for the Season Being
+            # Processed (e.g. Breeding Season, Molt, or All).
+            id_setToProcess = set(
+                resightDFToProcess['GlobalID']
+                .astype(str)
+                .str.strip('{}')
+                .str.upper()
+            )
+
+
             # Query records
             features = target.query(where=where, out_fields="*").features
 
@@ -229,23 +244,32 @@ class generalArcGIS:
                     att_id = att["id"]
                     original_name = att["name"]
                     parent_global_id = att.get("parentGlobalId")  #This is the GlobalID in the tblResights/Resight Repeat
-                    # table (not the ParentGlobalID in the Resights Repeats
+                    # table not the ParentGlobalID in the Resights Repeats
 
-                    # Download attachment
-                    downloaded_path = target.attachments.download(
-                        oid=oid,
-                        attachment_id=att_id,
-                        save_path=out_folder
-                    )
+                    # Normalize the GlobalID being processed
+                    parent_norm = str(parent_global_id).strip('{}').upper()
 
-                    rows.append({
-                        'ID': att_id,
-                        'PhotoName': original_name,
-                        'ParentGlobalID': parent_global_id
+                    # If photos is in the 'resightDFToProcess' dataframe then import else skip
+                    if parent_norm in id_setToProcess:
 
-                    })
+                        # Download attachment
+                        downloaded_path = target.attachments.download(
+                            oid=oid,
+                            attachment_id=att_id,
+                            save_path=out_folder
+                        )
 
-                    print(f"Downloaded: {original_name} ParentGlobalID: {parent_global_id})")
+                        rows.append({
+                            'ID': att_id,
+                            'PhotoName': original_name,
+                            'ParentGlobalID': parent_global_id
+                        })
+
+                        print(f"Downloaded: {original_name} - ParentGlobalID: {parent_global_id})")
+
+                    else:
+                        print(f"Skipping Download of: {original_name} - ParentGlobalID: {parent_global_id})")
+
 
             # Build dataframe
             out_df = pd.DataFrame(rows)
