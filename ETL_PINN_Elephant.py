@@ -750,6 +750,10 @@ class etl_PINNElephant:
 
         :return:outDFResightEvents - Dataframe appended to Resight Events and outDFResightRec - Dataframe appended to
              tblResights.
+
+        Udpates:
+        9/1/2026 - Added logic to only import the Resight Photos for the subset of records being processed (e.g. Molt
+        Season or Breeding Season or All).
         """
 
         try:
