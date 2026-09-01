@@ -1055,7 +1055,7 @@ class etl_PINNElephant:
             inQuery = (f"SELECT tblResightEvents.Season, tblResights.ResightID, tblResights.GlobalID FROM tblResights INNER JOIN"
                        f" tblResightEvents ON tblResights.EventID = tblResightEvents.EventID;")
 
-            # Import Resights
+            # Import Resights table
             resightsDF = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
 
             # This will get the Resight Records processed with the ResightID
@@ -1084,7 +1084,9 @@ class etl_PINNElephant:
                 outGIS = agl.connectAGOL_ArcGIS(generalArcGIS=generalArcGIS, dmInstance=dmInstance)
 
             # Process the Photos in the Resight Repeat Table
-            outPhotosDF =  agl.generalArcGIS.download_attachments_from_flc(outGIS, etlInstance.flID,
+            # Update 9/1/2026 only importing the records in the resightDF2None (i.e. the subset being processed).
+            # This is being done to avoid duplicate photo import.
+            outPhotosDF =  agl.generalArcGIS.download_attachments_from_flc(outGIS, resightDF2None, etlInstance.flID,
                                                                            etlInstance.photoDir, 'resightsrepeats',
                                                                            where="1=1", is_table=True)
 
@@ -1115,6 +1117,9 @@ class etl_PINNElephant:
 
             # Append to table
             # Build the SQL query dynamically
+            # Unique Index in tblResightPhotos on fields 'ResightID' and 'PhotoName' will keep duplicates from being
+            # posted.
+
             insertQuery = (
                f"INSERT INTO tblResightPhotos ({', '.join(cols)}) "
                f"VALUES ({', '.join(['?'] * len(cols))})")
