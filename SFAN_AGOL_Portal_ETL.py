@@ -95,9 +95,9 @@ AGOLDownload = 'No'  # ('Yes'|'No')
 # you push to the server.
 photoDir = r'C:\Users\KSherrill\OneDrive - DOI\SFAN\VitalSigns\Pinnipeds\Data\ETL\2026\Molt_2026\Photos'
 
-# Pinnipeds Elephant Seal - must define which season is being processed (e.g. Breeding Season, Molt, All). Note 'Molt'
-# will process both Molt and all other not Breeding Season.
-elephantSeason = 'Molt' # 'Breeding|Molt|All'
+# Pinnipeds Elephant Seal - must define which season is being processed (e.g. Other, Breeding Season, Molt, or All).
+# Other is from August 1 - Nov30, Breeding (Dec 1 - mid March), Molt (Mid-March - July 31).
+elephantSeason = 'Molt' # 'Other|Breeding|Molt|All'
 
 
 def main():
