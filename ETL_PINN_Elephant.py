@@ -168,6 +168,9 @@ class etl_PINNElephant:
             # Update 'E_SEAL' to 'E_Seal' for consistency
             outDFSubset['ProjectCode'] = outDFSubset['ProjectCode'].str.replace(r'^E_SEAL$', 'E_Seal', regex=True)
 
+            # Update Season field to Null if it is an other season event with value string "Null"
+            outDFSubset["Season"] = outDFSubset["Season"].replace("Null", None)
+
             # Convert to date only
             outDFSubset['StartDate'] = pd.to_datetime(outDFSubset['StartDate']).dt.normalize()
 
@@ -2599,6 +2602,9 @@ def subsetToSeason(outDFDic, etlInstance, dmInstance):
                     break
             # Apply the subset
             inDFSurveySub = inDFSurvey[inDFSurvey['Season'].str.contains('other', case=False, na=False)]
+
+            # Update Season field to Null if it is an other season event with value string "Null"
+            inDFSurveySub["Season"] = inDFSurveySub["Season"].replace("Null", None)
 
 
         else: #No Filter Applied
