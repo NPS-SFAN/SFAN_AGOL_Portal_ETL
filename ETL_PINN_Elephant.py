@@ -2542,7 +2542,9 @@ def consolidateTblResightEvents(outUniqueEventsDF, outDFResightEvents, etlInstan
 
 def subsetToSeason(outDFDic, etlInstance, dmInstance):
     """
-    Subset the passed AGOL dataframe dictionaries to the defined elephanSeason.
+    Subset the passed AGOL dataframe dictionaries to the defined Elephant Season.
+    Seasons are:
+    Other is from August 1 - Nov30, Breeding (Dec 1 - mid March), Molt (Mid-March - July 31)
 
     :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
     :param etlInstance: ETL processing instance
@@ -2550,6 +2552,10 @@ def subsetToSeason(outDFDic, etlInstance, dmInstance):
 
     :return outFCDicSub: Dictionary with all imported dataframes from the imported feature layer subset to the defined
         elephantSeason.
+
+    updates
+    9/21/2026: Added logic to handle the 'Other' season (August 1 - Nov30) subset distinct/seperate from the 'Molt'
+    season processing.
     """
 
     try:
@@ -2579,7 +2585,21 @@ def subsetToSeason(outDFDic, etlInstance, dmInstance):
                     inDFSurvey = df
                     break
             # Apply the subset
-            inDFSurveySub = inDFSurvey[~inDFSurvey['Season'].str.contains('breeding', case=False, na=False)]
+            inDFSurveySub = inDFSurvey[inDFSurvey['Season'].str.contains('molt', case=False, na=False)]
+
+
+        elif "other" in eSeasonLU.lower():
+            filtered = "Yes"
+
+            # Read in the Survey Metadata Dataframe:
+            inDFSurvey = None
+            for key, df in outDFDic.items():
+                if 'ElephantSeal' in key:
+                    inDFSurvey = df
+                    break
+            # Apply the subset
+            inDFSurveySub = inDFSurvey[inDFSurvey['Season'].str.contains('other', case=False, na=False)]
+
 
         else: #No Filter Applied
             filtered = "No"
