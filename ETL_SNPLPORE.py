@@ -1,6 +1,11 @@
 """
 ETL_SNPLPORE.py
 Methods/Functions to be used for Snowy Plover PORE ETL workflow.
+
+Updates:
+9/23/2026 - Added function 'process_NestsNoObservations'
+
+
 """
 
 #Import Required Libraries
@@ -334,8 +339,8 @@ class etl_SNPLPORE:
                          'SNPL Band Count': 'SNPL_Bands'}))
 
             ####################
-            # Create a Master Nest ID if it doesn't already Exist - Nest_ID is a related table that must first be
-            # created before creating the Observation
+            # Create a Master Nest ID if it doesn't already Exist from Previous ETL in the Season - Nest_ID is a
+            # related table that must first be created before Observations can be defined.
             ####################
 
             outDFNewNests = process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
@@ -868,6 +873,10 @@ class etl_SNPLPORE:
             outDFSubsetNone['Datum'] = 'WGS84'
 
 
+            # Routine to check for Nests that aren't already in the tbl_Nest_Master from the 'process_nestMasterInitial'
+            # function.  If the Nest didn't have an observation it will not have a Nest Record.
+            process_NestsNoObservations(etlInstance, dmInstance, outDFSubsetNone)
+
             # Apply the 'tlu_MicroHabitat' lookup table codes (i.e. MicrohabitatCode field) via the 'ID' field join
             outDFSubsetwMicro = process_MicroID(etlInstance, dmInstance, outDFSubsetNone)
 
@@ -1024,6 +1033,90 @@ class etl_SNPLPORE:
             traceback.print_exc(file=sys.stdout)
 
 
+def process_NestsNoObservations(etlInstance, dmInstance, inNestRepeatDF):
+    """
+
+    Routine to check for Nests that aren't already in the tbl_Nest_Master from the 'process_nestMasterInitial'
+    function.  If the Nest didn't have an observation it will not have a Nest Record from the 'process_nestMasterInitial'
+    routine.  If Nest ID doesn't exist routine will add the first date's for the nest.
+
+    :param etlInstance: ETL processing instance
+    :param dmInstance: Data Management instance
+    :param inNestRepeatDF: Nest Repeat Dataframe
+
+    :return
+    """
+
+    try:
+        # Retain the first record by 'Nest_ID'
+        inNestRepeatDFFirst = inNestRepeatDF.drop_duplicates(subset=['Nest_ID'], keep='first')
+
+        # Join to Check which 'Nest_ID, Year, and Location_ID composite primary key is not present Left join.
+        # Pull the Nest Master table
+        inQuery = f"Select * FROM tbl_Nest_Master;"
+        outDFNestMaster = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        # Perform an outer left join - these are the records to be append
+        outDFNestIDNew = pd.merge(inNestRepeatDFFirst, outDFNestMaster, on='Nest_ID', how='left', indicator=True)
+
+        # Only Retain the records that aren't present via '_merge' = 'left_only'.  Necessary if multiple etl happening
+        # per year thus some nests are already present.
+        outDFNestIDNew = outDFNestIDNew[outDFNestIDNew['_merge'] == 'left_only']
+
+        # Look up Location_ID via the Event ID
+        inQuery = f"Select tbl_Events.Event_ID, tbl_Events.Location_ID FROM tbl_Events;"
+        outDFEvents = dm.generalDMClass.connect_to_AcessDB_DF(inQuery, etlInstance.inDBBE)
+
+        outDFEventsNoNest = pd.merge(outDFNestIDNew, outDFEvents, on='Event_ID', how='inner')
+
+        recCount = len(outDFEventsNoNest)
+
+        # Append Nests not already present
+        if recCount > 0:
+
+            # Subset to the 'Location_ID', 'Nest_ID', 'Year' fields
+            fieldRetainList = ['Location_ID_y', 'Nest_ID']
+
+            outDFEventsNoNest2 = outDFEventsNoNest[fieldRetainList]
+
+            # Rename Location_ID_y'
+            outDFEventsNoNest2 = outDFEventsNoNest2.rename(columns={'Location_ID_y': 'Location_ID'})
+
+            # Add fields: Created_By, DataProcessingLevelUser
+            outDFEventsNoNest2["Created_By"] = etlInstance.inUser
+            outDFEventsNoNest2["DataProcessingLevelUser"] = etlInstance.inUser
+            outDFEventsNoNest2["Year"] = etlInstance.yearLU
+
+            # Grab all column names from the dataframe
+            cols = outDFEventsNoNest2.columns.tolist()
+
+            # Build the SQL query dynamically
+            insertQuery = (
+                f"INSERT INTO tbl_Nest_Master ({', '.join(cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
+            cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
+            dm.generalDMClass.appendDataSet(cnxn, outDFEventsNoNest2, "tbl_Nest_Master", insertQuery,
+                                            dmInstance)
+
+            logMsg = f'Successfully Appended - {recCount} - New Master Nest Records to tbl_Nest_Master, that which did not have SNPL Observations.'
+            print(logMsg)
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+
+        else:
+            logMsg = f'No new Nest_ID records to append to tbl_Nest_Master.'
+            print(logMsg)
+            dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+
+
+    except Exception as e:
+
+        logMsg = f'WARNING ERROR  - ETL_SNPLPORE.py - process_NestsNoObservations: {e}'
+        dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+        logging.critical(logMsg, exc_info=True)
+        traceback.print_exc(file=sys.stdout)
+
+
 
 def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset):
     """
@@ -1058,7 +1151,7 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
         # Perform an outer left join - these are the records to be append
         outDFNestIDNew = pd.merge(outDFNestIDFirst, outDFNestMaster, on='Nest_ID', how='left', indicator=True)
 
-        # Only Rectain the records that aren't present via '_merge' = 'left_only'.  Necessary is multiple etl happen
+        # Only Retain the records that aren't present via '_merge' = 'left_only'.  Necessary if multiple etl happening
         # per year thus some nests are already present.
         outDFNestIDNew = outDFNestIDNew[outDFNestIDNew['_merge'] =='left_only']
 
@@ -1258,6 +1351,11 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
     :param dmInstance: Data Management instance
 
     :return:
+
+    Updates:
+    9/22/2026 - Updated processing for 'others' observers processing to handle when multiple others defined via a comma
+    delimited - previousl only was handling a single other observer.
+
     """
 
     try:
@@ -1300,10 +1398,18 @@ def processSNPLContacts(inDF, etlInstance, dmInstance):
 
             # Trim leading white spaces in the 'Observers' field
             inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.lstrip()
+            # Split on Comma in Observers
+            inDFOthersParsed3['Observers'] = inDFOthersParsed3['Observers'].str.split(',')
+
+            # Explode the split to get one record per observer in the other field
+            inDFOthersParsed3Explode = inDFOthersParsed3.explode('Observers')
+
+            # Clean up the explode
+            inDFOthersParsed3Explode['Observers'] = inDFOthersParsed3Explode['Observers'].str.strip()
 
             ##################################
             # Combine both parsed dataframes for fields Observers and Others
-            dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3], ignore_index=True)
+            dfObserversOther = pd.concat([inDFObserversParsed3, inDFOthersParsed3Explode], ignore_index=True)
 
         else:
             # No Other assign as
