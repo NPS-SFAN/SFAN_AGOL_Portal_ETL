@@ -5,6 +5,9 @@ Methods/Functions to be used for Pinnipeds Elephant Seal ETL workflow.
 Created: 5/7/2025
 Created By: Kirk Sherrill SFAN Data Scientist
 Updates:
+10/13/2026 -  Updated all 'MatureCode' values to Upper Case (ie. Cow to COW, etc.), except value 'OtherSA' to account
+for updates in ETL import starting in 2025-2026 - KRS.
+
 """
 
 #Import Required Libraries
@@ -707,6 +710,12 @@ class etl_PINNElephant:
 
             # Update any 'nan' string or np.nan values to None to consistently handle null values.
             combinedAllCountsDF = combinedAllCountsDF.replace([np.nan, 'nan'], None)
+
+
+            # Post Hoc - Updated all 'MatureCode' values to Upper Case (ie. Cow to COW, etc.), except value 'OtherSA'
+            # Added 10/12/2026 to account for updates in ETL import starting in 2025-2026.
+            combinedAllCountsDF['MatureCode'] = combinedAllCountsDF['MatureCode'].apply(
+                lambda x: x if x == 'OtherSA' else str(x).upper())
 
             # Pass final Query to be appended
             insertQuery = (f'INSERT INTO tblSealCount (CreatedDate, EventID, ObservationTime, LocationID, '
