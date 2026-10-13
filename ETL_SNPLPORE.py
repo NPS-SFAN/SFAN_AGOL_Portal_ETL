@@ -1196,7 +1196,7 @@ def process_NestMasterInitial(etlInstance, dmInstance, outDFSurvey, outDFSubset)
 
 def process_NestRepeatSingle(etlInstance, dmInstance, outDFSubsetNone):
     """
-    Routine to process the nest repeats that have one one record so can be updated to the existing
+    Routine to process the nest repeats that have one record so can be updated to the existing
 
     :param etlInstance: ETL processing instance
     :param dmInstance: Data Management instance
