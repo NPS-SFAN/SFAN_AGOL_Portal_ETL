@@ -98,6 +98,10 @@ class etl_SalmonidsElectro:
         :return:outDFEvent2 - Dataframe of the import records to tblEvents.
                 outDFSurvey - Dataframe of the imported records to tblEfishSurveys
                 outContactsDF - Dataframe with the imported Observer/Contacts per event to tblEventObservers
+
+        Updates: 20261015 - Added field 'StratifiedRandomSample' to EFishSurveys.
+
+
         """
 
         try:
@@ -112,8 +116,8 @@ class etl_SalmonidsElectro:
             outDFSubset = inDF[['GlobalID', 'StreamID', "Device", "other_Device", "StartDate", "FieldSeason",
                                 "Define Observers(s)", "other_Observer", "ProjectCode", "ProjectDescription",
                                 "LocationID", "IndexReach", "IndexUnit", "BasinWideUnit", "BasinWideUnitCode",
-                                "UnitType", "UnitTypeSecondary", "CalibrationPool", "Temp_C", "DO_percent",
-                                "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
+                                "UnitType", "UnitTypeSecondary", "StratifiedRandomSample", "CalibrationPool", "Temp_C",
+                                "DO_percent", "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
                                 "NumberOfPasses", "CreationDate", "Creator"]]
 
             # Rename might be best to not include in the subset operation
@@ -183,21 +187,21 @@ class etl_SalmonidsElectro:
                                       'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
                                       'DO mg/l', 'Conductivity', 'Specific Conductance',
                                       'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
-                                      'DataProcessingLevelUser', 'SurveyType'],
+                                      'DataProcessingLevelUser', 'SurveyType', 'StratifiedRandomSample'],
                             'Type': ["int32", "object", "object", "datetime64", "object",
                                      "object", "object", "object", "object",
                                      "int32", "object", "object", "int32", "object",
                                      "object", "object", "object", "float32", "float32",
                                      "float32", "float32", "float32",
                                      "int32", "datetime64", "int32", "datetime64",
-                                     "object", "object"],
+                                     "object", "object", "object"],
                             'DateTimeFormat': ["na", "na", "na", "%m/%d/%Y", "na",
                                                "na", "na", "na", "na",
                                                "na", "na", "na", "na", "na",
                                                "na", "na", "na", "na", "na",
                                                "na", "na", "na",
                                                "na", "%m/%d/%Y %I:%M:%S %p", "na", "%m/%d/%Y %I:%M:%S %p",
-                                               "na", "na"]}
+                                               "na", "na", "na"]}
 
             outDFSubset2 = dm.generalDMClass.defineFieldTypesDF(dmInstance, fieldTypeDic=fieldTypeDic, inDF=outDFSubset)
 
@@ -272,7 +276,8 @@ class etl_SalmonidsElectro:
                 lambda x: True if x == 'Yes' else False)
 
             # Define Survey DataFrame - with Subset
-            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'IndexReach', 'IndexUnit', 'BasinWideUnit',
+            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'StratifiedRandomSample', 'IndexReach',
+                                                'IndexUnit', 'BasinWideUnit',
                                                 'BasinWideUnitCode', 'UnitType', 'UnitTypeSecondary', 'CalibrationPool',
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
                                                 'NumberOfPasses']]
@@ -286,11 +291,12 @@ class etl_SalmonidsElectro:
                 "None": None,
             })
 
-            # Pass final Query to be appended to tblEFishSurveys - Must have brackets around fields with spaces.
-            insertQuery = (f'INSERT INTO tblEfishSurveys (EventID, LocationID, IndexReach, IndexUnit, BasinWideUnit, '
-                           f'BasinWideUnitCode, UnitType, UnitTypeSecondary, CalibrationPool, Temp, DO, [DO mg/l], '
-                           f'Conductivity, [Specific Conductance], NumberOfPasses) '
-                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            # Construct the Append query fields and placeholdrs
+            fieldStr = ', '.join(outDFSurvey.columns)
+            placeholders = ', '.join(['?'] * len(outDFSurvey.columns))
+            fieldList = list(outDFSurvey.columns)
+
+            inQuery = f'INSERT INTO tblEfishSurvey ({fieldStr}) VALUES ({placeholders})'
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEfishSurveys", insertQuery,
