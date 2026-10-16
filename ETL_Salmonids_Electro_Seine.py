@@ -99,7 +99,7 @@ class etl_SalmonidsElectro:
                 outDFSurvey - Dataframe of the imported records to tblEfishSurveys
                 outContactsDF - Dataframe with the imported Observer/Contacts per event to tblEventObservers
 
-        Updates: 20261015 - Added field 'StratifiedRandomSample' to EFishSurveys.
+        Updates: 20261015 - Added field 'StratifiedRandomSelection' to EFishSurveys.
 
 
         """
@@ -116,7 +116,7 @@ class etl_SalmonidsElectro:
             outDFSubset = inDF[['GlobalID', 'StreamID', "Device", "other_Device", "StartDate", "FieldSeason",
                                 "Define Observers(s)", "other_Observer", "ProjectCode", "ProjectDescription",
                                 "LocationID", "IndexReach", "IndexUnit", "BasinWideUnit", "BasinWideUnitCode",
-                                "UnitType", "UnitTypeSecondary", "StratifiedRandomSample", "CalibrationPool", "Temp_C",
+                                "UnitType", "UnitTypeSecondary", "StratifiedRandomSelection", "CalibrationPool", "Temp_C",
                                 "DO_percent", "DO_mg_per_L", "Conductivity_uS_per_cm", "SpecificConductance_uS_per_cm",
                                 "NumberOfPasses", "CreationDate", "Creator"]]
 
@@ -187,7 +187,7 @@ class etl_SalmonidsElectro:
                                       'UnitType', 'UnitTypeSecondary', 'CalibrationPool', 'Temp', 'DO',
                                       'DO mg/l', 'Conductivity', 'Specific Conductance',
                                       'NumberOfPasses', 'CreatedDate', 'DataProcessingLevelID', 'DataProcessingLevelDate',
-                                      'DataProcessingLevelUser', 'SurveyType', 'StratifiedRandomSample'],
+                                      'DataProcessingLevelUser', 'SurveyType', 'StratifiedRandomSelection'],
                             'Type': ["int32", "object", "object", "datetime64", "object",
                                      "object", "object", "object", "object",
                                      "int32", "object", "object", "int32", "object",
@@ -276,7 +276,7 @@ class etl_SalmonidsElectro:
                 lambda x: True if x == 'Yes' else False)
 
             # Define Survey DataFrame - with Subset
-            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'StratifiedRandomSample', 'IndexReach',
+            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'StratifiedRandomSelection', 'IndexReach',
                                                 'IndexUnit', 'BasinWideUnit',
                                                 'BasinWideUnitCode', 'UnitType', 'UnitTypeSecondary', 'CalibrationPool',
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
