@@ -242,7 +242,7 @@ class etlInstance_QC:
 
         """
         QC Validation for Fish Weight field. Fish Weight is Total Weight - Bag Weight.
-        Updating if the QC Validation Calulated Fish Weight if >=0.001.
+        Updating if the QC Validation Calculated Fish Weight if >=0.001.
         Flagging with 'CFCETL' flag -Calculated field value was corrected during extract transform and load
         quality control validation check.
 
