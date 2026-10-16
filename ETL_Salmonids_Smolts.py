@@ -792,7 +792,7 @@ def process_Counts(inDF, etlInstance, dmInstance):
 
         #####
         # Summarize by EventID, SpeciesCode, LifeStage, and QCFlag  - Sum the UnmeasuredLive and UnmeasuredDead so only
-        # one record per EventID, SpeciesCode, LifeStage, and QCFlag to avoid duplicates. Some times measurement at Traps
+        # one record per EventID, SpeciesCode, LifeStage, and QCFlag to avoid duplicates. Sometimes counts at Traps
         # are done twice a day under the same EventID/Survey - Logic Added 6/11/2026
         #####
 
