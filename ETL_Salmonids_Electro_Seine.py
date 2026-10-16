@@ -67,14 +67,15 @@ class etl_SalmonidsElectro:
             # and Tally data to 'tblSummerCounts' as of 10/10/2024.  Table 'tblSummerCounts' is really a summary table
             # of the measurements table (measured and tally), this table is being set to legacy.
             ######
-            """
-            outDFCounts = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements,
-                                                                              outDFPassWQ, etlInstance, dmInstance)
-             
-             logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
-             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
-             logging.info(logMsg)
-            """
+            # """
+            # outDFCounts = etl_SalmonidsElectro.process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements,
+            #                                                                   outDFPassWQ, etlInstance, dmInstance)
+            #
+            #  logMsg = f"Success ETL_Salmonids_Electro.py - process_ETLElectro."
+            #  dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
+            #  logging.info(logMsg)
+            # """
+
             outETL = "Success ETL Salmonids Electrofishing"
             return outETL
 
@@ -108,7 +109,7 @@ class etl_SalmonidsElectro:
             #Export the Parent Event/Survey Dataframe from Dictionary List - Wild Card in Key is *EFish*
             inDF = None
             for key, df in outDFDic.items():
-                if 'EFish' in key:
+                if 'Seine' in key:
                     inDF = df
                     break
 
@@ -265,38 +266,45 @@ class etl_SalmonidsElectro:
             for field in fieldList:
                 outDFSubset2wEventID[field] = outDFSubset2wEventID[field].replace(0, None)
 
-            # Convert Water Quality Fields to String with only two decimal places, thus only
-            # importing out to two significant digits - Added 10/21/2024
-            fieldList = ['Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance']
-            for field in fieldList:
-                outDFSubset2wEventID[field] = outDFSubset2wEventID[field].apply(lambda x: f"{x:.2f}")
+
+
 
             # Calibration pool is a Yes/No Boleen field, setting to 'True'/ 'False' (i.e. Boolean)
             outDFSubset2wEventID['CalibrationPool'] = outDFSubset2wEventID['CalibrationPool'].apply(
                 lambda x: True if x == 'Yes' else False)
 
+            # 'StratifiedRandomSelection'
+
             # Define Survey DataFrame - with Subset
-            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'StratifiedRandomSelection', 'IndexReach',
+            outDFSurvey = outDFSubset2wEventID[['EventID', 'LocationID', 'IndexReach', 'StratifiedRandomSelection',
                                                 'IndexUnit', 'BasinWideUnit',
                                                 'BasinWideUnitCode', 'UnitType', 'UnitTypeSecondary', 'CalibrationPool',
                                                 'Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance',
                                                 'NumberOfPasses']]
 
-            # Set nan values real or string to None - added 11/14/2025
-            outDFSurvey = outDFSurvey.replace({
-                np.nan: None,
-                "nan": None,
-                "NaN": None,
-                "NONE": None,
-                "None": None,
-            })
+            # Truncate numeric to two digits
+            fieldList = ['Temp', 'DO', 'DO mg/l', 'Conductivity', 'Specific Conductance']
+            for field in fieldList:
+                outDFSurvey[field] = outDFSurvey[field].apply(
+                    lambda x: np.trunc(x * 100) / 100 if x is not None else None
+                )
 
-            # Construct the Append query fields and placeholdrs
-            fieldStr = ', '.join(outDFSurvey.columns)
-            placeholders = ', '.join(['?'] * len(outDFSurvey.columns))
-            fieldList = list(outDFSurvey.columns)
+            # Conductivity is a string because in the backend it has values such as '175.8-224.5' - Convert this field to a string one decimal point.
+            fieldList = ['Conductivity']
+            for field in fieldList:
+                outDFSurvey[field] = outDFSurvey[field].apply(lambda x: f"{x:.1f}")
 
-            inQuery = f'INSERT INTO tblEfishSurvey ({fieldStr}) VALUES ({placeholders})'
+            # Set nan values real or string to None
+            outDFSurvey = outDFSurvey.replace([np.nan, 'nan'], None)
+
+
+            # Define the append query
+            cols = outDFSurvey.columns.tolist()
+
+            # Append to table - must use the f' is reserved words or fields with spaces - added 10/16/2026
+            insertQuery = (
+                f"INSERT INTO tblEfishSurveys ({', '.join(f'[{c}]' for c in cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFSurvey, "tblEfishSurveys", insertQuery,
@@ -433,7 +441,8 @@ class etl_SalmonidsElectro:
         :return:outDFMeasurements - Measurements dataframe appended to table 'tblSummerMeasurements
 
         Updates:
-        20241011 - Removed criteria only Measurements records are being processed.  No both
+        20241011 - Removed criteria only Measurements records are being processed.
+        20261016 -
         """
 
         try:
@@ -522,6 +531,8 @@ class etl_SalmonidsElectro:
                                                                               outDFMeasurementswRandom,
                                                                               qcValidationFields)
 
+
+
             # Define insert/append query
             insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
                            f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, Injured, '
@@ -534,7 +545,7 @@ class etl_SalmonidsElectro:
             dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal, "tblSummerMeasurements", insertQuery,
                                             dmInstance)
 
-            logMsg = f"Success ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
+            logMsg = f"Success ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.info(logMsg)
 
@@ -543,7 +554,7 @@ class etl_SalmonidsElectro:
 
         except Exception as e:
 
-            logMsg = f'WARNING ERROR  ETL EFishing Pass ETL_Salmonids_Electro.py - process_Measurements_Electrofishing: {e}'
+            logMsg = f'WARNING ERROR  ETL_Salmonids_Electro.py - process_Measurements_Electrofishing: {e}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
@@ -551,11 +562,11 @@ class etl_SalmonidsElectro:
     def process_Counts_Electrofishing(outDFDic, outDFEvent, outDFMeasurements, outDFPassWQ, etlInstance, dmInstance):
 
         """
-        NOTE -  Not populating the Summary data of Measurements and Tally data to 'tblSummerCounts' as of 10/10/2024.
+        NOTE LEGACY -  Not populating the Summary data of Measurements and Tally data to 'tblSummerCounts' as of 10/10/2024.
         Table 'tblSummerCounts' is really a summary table of the measurements table (measured and tally), this table is
         being set Legacy.
 
-        ETL routine for the Count data in the Electrofishing Survey 123 form. Routine will calculate the data going to
+        ETL routine for the Count data in the Electrofishing/Siene Survey 123 form. Routine will calculate the data going to
         the 'tblSummerCount' table. This data is the total across Measured and Tallied data. Fish counts for each pass
         during electrofishing and snorkeling surveys. Count values per records are the combined measured and
         unmeasured fish by Species and Lifeform.
@@ -564,8 +575,6 @@ class etl_SalmonidsElectro:
         used in addition to the 'Tallied' data when calculating the Total Count (measured and unmeasured) by Pass,
         Taxon, and Lifeform per survey.
 
-        NOTE - Survey 123 Form in Field Season 2025 needs to be modified to by adding a 'Mortality' field to the survey.
-        This will also need to be added to this ETL workflow - KRS 20240913
 
         :param outDFDic - Dictionary with all imported dataframes from the imported feature layer
         :param outDFEvent - Dataframe with the processed Event/Survey info
@@ -982,7 +991,8 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
         if numRec >= 1:
             # Sort on the Observers field
             dfObserversNull_sorted = dfObserversNull.sort_values(by='Observers')
-            logMsg = f'WARNING there are {numRec} records without a defined records in the tluObservers lookup table.'
+            logMsg = (f'WARNING there are {numRec} records without a defined records in the tluObservers lookup table.'
+                      f'These do not have to be defined - please review output.')
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
 
@@ -996,13 +1006,16 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
                       f'Exiting ETL_Salmonids_Electro.py - process_SalmonidsContacts with out full completion.')
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
-            exit()
+
 
         logMsg = f"Success ETL_Salmonids_Electro.py - processSalmonidsContacts."
         dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
         logging.info(logMsg)
 
-        return inDFObserverDefinedAll
+        # Drop the Records with 'Observers' == 'Other'
+        inDFObserverDefinedAllFinal = inDFObserverDefinedAll[inDFObserverDefinedAll['Observers'].str.strip().str.lower() != 'other']
+
+        return inDFObserverDefinedAllFinal
 
     except Exception as e:
 
