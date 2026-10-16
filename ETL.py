@@ -74,8 +74,8 @@ class etlInstance:
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
                 outETL = SNPLP.etl_SNPLPORE.process_ETLSNPLPORE(outDFDic, etlInstance, dmInstance, generalArcGIS)
 
-            # ETL Routine Salmonids Electrofishing
-            elif etlInstance.protocol.lower() == 'salmonids-efish':
+            # ETL Routine Salmonids Seine - EFish retired starting in 2025/2026
+            elif etlInstance.protocol.lower() == 'salmonids-seine':
                 # Pull the Feature Layer for the defined return as dataframe(s) in list variable outDFList
                 outDFDic = agl.generalArcGIS.processFeatureLayer(generalArcGIS, etlInstance, dmInstance)
                 outETL = SEfish.etl_SalmonidsElectro.process_ETLElectro(outDFDic, etlInstance, dmInstance)
