@@ -220,11 +220,13 @@ class etl_SalmonidsElectro:
                                       'DataProcessingLevelUser']]
 
             # Append outDFSurvey to 'tbl_Events'
-            # Pass final Query to be appended
-            insertQuery = (f'INSERT INTO tblEvents (GlobalID, ProtocolID, StreamID, ProjectCode, SurveyType, '
-                           f'ProjectDescription, FieldSeason, StartDate, FieldDevice, CreatedDate, '
-                           f'CreatedBy, DataProcessingLevelID, DataProcessingLevelDate,DataProcessingLevelUser) '
-                           f'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            # Define the append query
+            cols = outDFEvent.columns.tolist()
+
+            # Append to table - must use the f' is reserved words or fields with spaces - added 10/16/2026
+            insertQuery = (
+                f"INSERT INTO tblEvents ({', '.join(f'[{c}]' for c in cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             dm.generalDMClass.appendDataSet(cnxn, outDFEvent, "tblEvents", insertQuery,
@@ -442,7 +444,9 @@ class etl_SalmonidsElectro:
 
         Updates:
         20241011 - Removed criteria only Measurements records are being processed.
-        20261016 -
+        20261016 - dded logic to measurements work to combine all Tally measurements into one aggregated record.
+        Field entry may enter multiple records by Event, Pass, LifeStage....rather then scrolling back to add to a
+        previous entry, they are adding a new records which needs to be aggregated.
         """
 
         try:
@@ -531,18 +535,57 @@ class etl_SalmonidsElectro:
                                                                               outDFMeasurementswRandom,
                                                                               qcValidationFields)
 
+            #####
+            # Prior to appending combine all Tally measurements into one aggregated record.
+            # Summarize by EventID, Pass, SpeciesCode, LifeStage, Injured, Dead, Scales, Tissue, and QCFlag  - so only
+            # one record per Event/Pass.  Sometimes during data collection field crew just enters a new record at time
+            # realized rather than painfully scrolling back up to the previous tally that was entered for
+            # the unique combination - 10/16/2026
+            #####
+
+            # Remove the Tally Records from 'inDFAppend_postQCVal'
+            tallyDF = inDFAppend_postQCVal[inDFAppend_postQCVal['Tally'] == True]
+
+            # Drop the index so can be grouped
+            tallyDF = tallyDF.reset_index(drop=True)
+
+            tallyDF_grouped = (
+                tallyDF
+                .groupby(['EventID', 'Tally', 'Pass', 'SpeciesCode', 'LifeStage', 'Injured', 'Dead', 'Scales', 'Tissue',
+                          'QCFlag'], dropna=False)
+                .agg({
+                    'NumberOfFish': 'sum',
+                    'Comments': concat_comments,
+                    'QCNotes': concat_comments
+                })
+                .reset_index()
+            )
+
+            # Measurement Records only - will add back the Tally Records post aggregation
+            measurementOnlyDF = inDFAppend_postQCVal[inDFAppend_postQCVal['Tally'] == False]
 
 
-            # Define insert/append query
-            insertQuery = (f'INSERT INTO tblSummerMeasurements (Pass, SpeciesCode, LifeStage, Tally, NumberOfFish, '
-                           f'ForkLength, LengthCategoryID, TotalWeight, BagWeight, FishWeight, Injured, '
-                           f'Dead, Scales, Tissue, EnvelopeID, PriorSeason, PITTag, Comments, QCFlag, QCNotes, '
-                           f'CreatedDate, EventID, RandomSample) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
-                           f'?, ?, ?, ?, ?, ?, ?, ?)')
+            # Combine the Measurement and combined Tally dataframes - sort by EventID, Pass, SpeciesCode, LifeStage
+            stackedDF = pd.concat([measurementOnlyDF, tallyDF_grouped], ignore_index=True)
+
+            stackedDFSorted = stackedDF.sort_values(
+                by=['EventID', 'Pass', 'SpeciesCode', 'LifeStage']).reset_index(drop=True)
+
+            ###########################
+
+
+            # Define the append query
+            cols = stackedDFSorted.columns.tolist()
+
+            # Append to table - must use the f' is reserved words or fields with spaces - added 10/16/2026
+            insertQuery = (
+                f"INSERT INTO tblSummerMeasurements ({', '.join(f'[{c}]' for c in cols)}) "
+                f"VALUES ({', '.join(['?'] * len(cols))})")
+
 
             cnxn = dm.generalDMClass.connect_DB_Access(etlInstance.inDBBE)
             # Append the Contacts to the xref_EventContacts table
-            dm.generalDMClass.appendDataSet(cnxn, inDFAppend_postQCVal, "tblSummerMeasurements", insertQuery,
+            dm.generalDMClass.appendDataSet(cnxn, stackedDFSorted, "tblSummerMeasurements", insertQuery,
                                             dmInstance)
 
             logMsg = f"Success ETL_Salmonids_Electro.py - process_Measurements_Electrofishing"
@@ -1002,8 +1045,7 @@ def process_SalmonidsContacts(inDF, etlInstance, dmInstance):
 
             dfObserversNull_sorted.to_csv(outPath, index=True)
 
-            logMsg = (f'Exporting Records without a defined lookup see - {outPath} \n'
-                      f'Exiting ETL_Salmonids_Electro.py - process_SalmonidsContacts with out full completion.')
+            logMsg = f'Exporting Records without a defined lookup see - {outPath}'
             dm.generalDMClass.messageLogFile(dmInstance, logMsg=logMsg)
             logging.warning(logMsg)
 
@@ -1045,3 +1087,17 @@ def assignRandomSampleFirst10(group):
         group.loc[co_subset.head(10).index, 'RandomSample'] = True
 
     return group
+
+def concat_comments(x):
+    cleaned = (
+        x.dropna()
+         .astype(str)
+         .str.strip()
+    )
+
+    cleaned = cleaned[cleaned != '']
+
+    if cleaned.empty:
+        return None
+
+    return ' | '.join(cleaned)
