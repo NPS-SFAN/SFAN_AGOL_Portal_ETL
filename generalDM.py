@@ -667,7 +667,10 @@ class generalDMClass:
 
             # Iterate over each row in the DataFrame and insert it into the table
             for index, row in dfToAppend.iterrows():
-                values = tuple(row)
+                #values = tuple(row)
+                # Updated 10/16/2026 converting all value to None and to native python types.
+                values = [generalDMClass.to_native(v) for v in row]
+
 
                 try:
                     cursor.execute(insertQuery, values)
@@ -781,6 +784,24 @@ class generalDMClass:
             logging.critical(logMsg, exc_info=True)
             traceback.print_exc(file=sys.stdout)
             sys.exit(1)
+
+    def to_native(v):
+
+        """
+        Function convert null values to None.  Additional converts all field types to python native field types.
+        This is being used to convert from Numpy and Pandas field types to Python native types so the passed dataframe
+        will successfully append to acess
+
+        Added 10/16/2026
+        """
+
+
+        if v is None or (not isinstance(v, (list, tuple, np.ndarray)) and pd.isna(v)):
+            return None
+        if isinstance(v, np.generic):
+            return v.item()
+        return v
+
 
     def applyLookupToDFField(dmInstance, dfLookupTable, lookupField, lookupValue, dfIn, dflookupField, dfDefineField):
         """
